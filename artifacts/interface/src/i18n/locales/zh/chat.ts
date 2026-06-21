@@ -1,5 +1,7 @@
 export default {
   title: "对话",
+  openAgent: "打开助手",
+  close: "关闭",
   newChat: "新对话",
   history: "历史",
   savedChats: "已保存对话",

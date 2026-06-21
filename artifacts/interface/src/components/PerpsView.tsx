@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { useT, useLang } from "@/i18n";
+import { PageHeader } from "@/components/PageHeader";
+import { useT } from "@/i18n";
+import { useTheme } from "@/theme";
 import { useAppStore } from "@/lib/store";
-import { useTabs } from "./TabsContext";
-import { PerpsTaPanel } from "./PerpsTaPanel";
+import { useChat } from "./ChatContextDef";
 
 // Avantis prices come from Pyth feeds, so the PYTH:<BASE><QUOTE> namespace is
 // the most consistent TradingView symbol for any listed pair (crypto, FX,
@@ -14,11 +15,12 @@ function tvSymbol(pair: string): string {
   return `PYTH:${pair.replace(/\s/g, "").replace(/\//g, "").toUpperCase()}`;
 }
 
-// Light-mode TradingView advanced chart, re-injected whenever the symbol
+// TradingView advanced chart, re-injected whenever the symbol or theme
 // changes. UI-only embed (no market data flows through it), consistent with the
 // existing GeckoTerminal chart in the token report.
 function TradingViewChart({ symbol }: { symbol: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { theme } = useTheme();
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -34,7 +36,7 @@ function TradingViewChart({ symbol }: { symbol: string }) {
       symbol,
       interval: "60",
       timezone: "Etc/UTC",
-      theme: "light",
+      theme: theme === "dark" ? "dark" : "light",
       style: "1",
       locale: "en",
       hide_side_toolbar: true,
@@ -47,7 +49,7 @@ function TradingViewChart({ symbol }: { symbol: string }) {
     return () => {
       container.innerHTML = "";
     };
-  }, [symbol]);
+  }, [symbol, theme]);
   return (
     <div
       ref={containerRef}
@@ -194,9 +196,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 
 export function PerpsView() {
   const t = useT();
-  const { lang } = useLang();
   const setChatInput = useAppStore((s) => s.setChatInput);
-  const { tabs, setActive } = useTabs();
+  const setChatOpen = useAppStore((s) => s.setChatOpen);
+  const { handleSubmit } = useChat();
 
   const markets = useQuery({
     queryKey: ["/api/perps/markets"],
@@ -263,13 +265,9 @@ export function PerpsView() {
     notional !== null &&
     notional >= minPos;
 
-  const switchToChat = () => {
-    // Mobile has a dedicated chat tab; desktop keeps chat inside the home
-    // 3-column layout. Prefer the chat tab, fall back to home so the prefilled
-    // message is always visible after handoff.
-    const chatTab = tabs.find((tb) => tb.kind === "chat" && !tb.hidden);
-    setActive(chatTab ? chatTab.id : "home");
-  };
+  // Open the floating agent chat. The trade review/close flows prefill the
+  // input (no auto-send — the user signs the tx), so we only reveal the chat.
+  const switchToChat = () => setChatOpen(true);
 
   const handleReviewOpen = () => {
     if (!validOpen || !activePairLabel) return;
@@ -283,6 +281,14 @@ export function PerpsView() {
     if (!p.pair || p.index === null) return;
     setChatInput(`close my ${p.pair} perp position (index ${p.index})`);
     switchToChat();
+  };
+
+  // Read-only trade prep: open the chat and auto-send a prompt so the agent
+  // works the setup for the active pair in the conversation.
+  const prepInChat = () => {
+    if (!activePairLabel) return;
+    setChatOpen(true);
+    void handleSubmit(t("perps.prepCommand", { pair: activePairLabel }));
   };
 
   const disabled =
@@ -301,18 +307,11 @@ export function PerpsView() {
   const livePrice = activePairLabel ? priceByPair.get(activePairLabel) ?? null : null;
 
   return (
-    <div className="flex-1 w-full min-h-0 overflow-y-auto bg-background">
-      <div className="mx-auto w-full max-w-[1800px] space-y-3 p-3 sm:p-4">
-        {/* header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="font-mono text-sm font-semibold lowercase text-foreground">
-              {t("perps.title")}
-            </h1>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              {t("perps.poweredBy")}
-            </p>
-          </div>
+    <div className="flex-1 w-full min-h-0 flex flex-col bg-background">
+      <PageHeader
+        title={t("perps.title")}
+        subtitle={t("perps.poweredBy")}
+        actions={
           <button
             type="button"
             onClick={() => {
@@ -327,29 +326,35 @@ export function PerpsView() {
             />
             {t("perps.refresh")}
           </button>
-        </div>
-
-        {/* chart (wide) + open position (narrow) */}
-        <div
-          className={cn(
-            "grid gap-3",
-            activePairLabel && "lg:grid-cols-12 lg:grid-rows-[556px_auto]",
-          )}
-        >
+        }
+      />
+      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div className="mx-auto w-full max-w-[1800px] space-y-3 p-3 sm:p-4">
+        {/* two full columns: chart (with TA report) | trade controls */}
+        <div className={cn("grid gap-3", activePairLabel && "lg:grid-cols-2")}>
           {activePairLabel && (
             <Card
               title={`${t("perps.chart")} · ${activePairLabel}`}
-              className="lg:order-1 lg:col-span-6 lg:flex lg:flex-col"
+              right={
+                <button
+                  type="button"
+                  onClick={prepInChat}
+                  className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+                >
+                  {t("perps.prepInChat")}
+                </button>
+              }
+              className="lg:flex lg:flex-col"
               bodyClassName="p-0 lg:flex-1 lg:min-h-0"
             >
-              <div className="h-[360px] w-full lg:h-full">
+              <div className="h-[360px] w-full lg:h-[520px]">
                 <TradingViewChart symbol={tvSymbol(activePairLabel)} />
               </div>
             </Card>
           )}
 
           {/* right column: markets selector + open position */}
-          <div className="flex flex-col gap-3 lg:order-2 lg:col-span-3 lg:min-h-0">
+          <div className="flex flex-col gap-3 lg:min-h-0">
           {/* markets */}
           <Card
             title={t("perps.marketsTitle")}
@@ -530,9 +535,10 @@ export function PerpsView() {
           </p>
           </Card>
           </div>
+        </div>
 
-          {/* positions */}
-          <Card title={t("perps.positionsTitle")} className="lg:col-span-12 lg:order-4">
+        {/* positions (full width) */}
+        <Card title={t("perps.positionsTitle")}>
           {positions.isLoading ? (
             <p className="font-mono text-xs text-muted-foreground">…</p>
           ) : positions.data?.needsWallet ? (
@@ -591,15 +597,7 @@ export function PerpsView() {
             </div>
           )}
         </Card>
-
-          {activePairLabel && (
-            <PerpsTaPanel
-              key={activePairLabel}
-              pair={activePairLabel}
-              lang={lang}
-            />
-          )}
-        </div>
+      </div>
       </div>
     </div>
   );

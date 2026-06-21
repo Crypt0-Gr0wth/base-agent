@@ -87,7 +87,25 @@ function blip(
   osc.stop(end + 0.02);
 }
 
-export function playSound(kind: Sound = "click"): void {
+// When a component plays its own deliberate sound for a gesture (e.g. the
+// "confirm" chirp on send), we record the moment so the global button-sound
+// fallback below can tell a click was already voiced and skip it — otherwise
+// those buttons would play their sound PLUS the generic click.
+let explicitUntil = 0;
+const EXPLICIT_WINDOW_MS = 80;
+
+// Mark that a deliberate sound just played for the current gesture, suppressing
+// the global button fallback. `playSound` calls this itself; the separate
+// `useClickSound` hook (its own AudioContext) calls it directly.
+export function noteExplicitSound(): void {
+  explicitUntil = Date.now() + EXPLICIT_WINDOW_MS;
+}
+
+// Play a tone WITHOUT touching the explicit-sound suppression window. Both the
+// public `playSound` (which marks) and the global button fallback (which must
+// NOT mark, or a rapid second click elsewhere would be wrongly suppressed) use
+// this.
+function emit(kind: Sound): void {
   if (isMuted()) return;
   const ac = getCtx();
   if (!ac) return;
@@ -110,4 +128,53 @@ export function playSound(kind: Sound = "click"): void {
       blip(ac, 880, 50, 0, 0.05, "sine");
       return;
   }
+}
+
+// Public entry: a deliberate, component-triggered sound. Marks the suppression
+// window so the global button fallback below won't also fire for this gesture.
+export function playSound(kind: Sound = "click"): void {
+  noteExplicitSound();
+  emit(kind);
+}
+
+// Install a single document-level listener so EVERY button makes a sound,
+// including the many raw <button> elements that don't call playSound directly.
+// It runs in the bubble phase, i.e. AFTER React's own onClick handlers, so any
+// component that already voiced a deliberate sound (which marks `explicitUntil`)
+// suppresses the generic click here and we don't double up. It plays via `emit`
+// (NOT `playSound`) so it never marks the window itself — otherwise a rapid
+// second click on another button would be wrongly muted.
+//
+// Opt a button out with `data-sound="off"`. Disabled buttons are skipped.
+//
+// The installed flag lives on `window`, not in a module variable, so Vite HMR
+// reloading this module can't stack a second listener (and double every click).
+const INSTALL_KEY = "__bunnyButtonSoundsInstalled";
+export function installButtonSounds(): void {
+  if (typeof document === "undefined" || typeof window === "undefined") return;
+  const w = window as unknown as Record<string, boolean | undefined>;
+  if (w[INSTALL_KEY]) return;
+  w[INSTALL_KEY] = true;
+  document.addEventListener(
+    "click",
+    (e) => {
+      const start = e.target as Element | null;
+      if (!start || typeof start.closest !== "function") return;
+      const btn = start.closest<HTMLElement>(
+        "button, [role='button'], a[role='button']",
+      );
+      if (!btn) return;
+      if (
+        (btn as HTMLButtonElement).disabled ||
+        btn.getAttribute("aria-disabled") === "true" ||
+        btn.dataset["sound"] === "off"
+      ) {
+        return;
+      }
+      // A component already voiced this gesture (e.g. a "confirm" chirp).
+      if (Date.now() < explicitUntil) return;
+      emit("click");
+    },
+    false,
+  );
 }

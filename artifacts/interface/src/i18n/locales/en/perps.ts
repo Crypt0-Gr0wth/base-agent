@@ -44,6 +44,10 @@ export default {
   spread: "spread",
   noMarkets: "no markets available",
 
+  prepInChat: "prep in chat",
+  prepCommand:
+    "give me a trade prep for the {pair} perp: read the live price, open interest (long vs short), funding and spread, then lay out the directional bias, key levels, and risk.",
+
   taReport: "ta report",
   taGenerating: "running technical analysis…",
   taWriting: "writing…",

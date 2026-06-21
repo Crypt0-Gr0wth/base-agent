@@ -7,13 +7,22 @@ export default {
   tokensMentioned: "tokens mentioned",
   copyTokenTitle: "{address}{chain} — click to copy",
   actionsInbox: "actions inbox",
+  inboxSubtitle:
+    "live signals from your actions — native recommendations, alpha from bunnies, and alerts.",
   hideAllTitle: "hide every pending recommendation and alert — kept in history",
   hideAll: "hide all",
   builderTitle: "create and manage actions that run 24/7",
   builder: "builder",
   historyTitle: "see every action ever posted, including hidden ones",
   history: "history",
-  recommendations: "recommendations",
+  fromBunnies: "from bunnies",
+  fromBunniesSublabel: "alpha and calls from bunnies you hold",
+  fromBunniesEmpty:
+    "no signals yet — alpha from bunnies you hold keys in will appear here.",
+  fromBunniesDisconnected:
+    "connect your wallet on bunny exchange to follow bunnies and see their alpha here.",
+  fromBunniesConnectCta: "go to bunny exchange",
+  recommendations: "native",
   recommendationsSublabel: "suggested moves you can execute",
   recommendationsEmpty:
     "nothing to act on yet — your actions will surface one-click recommendations here.",
@@ -27,4 +36,6 @@ export default {
   executeLabel: "execute:",
   executeInstructionsTitle: "fill the chat with the execute instructions",
   execute: "execute",
+  dismiss: "dismiss",
+  dismissTitle: "remove this recommendation from your inbox",
 } as const;

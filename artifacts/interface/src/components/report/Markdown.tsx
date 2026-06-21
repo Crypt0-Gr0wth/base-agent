@@ -1,17 +1,43 @@
-import { parseMarkdown, type Inline } from "./markdown-utils";
+import type { ReactNode } from "react";
+import { parseMarkdown, sanitizeHref, type Inline } from "./markdown-utils";
 
 function Inlines({ inlines }: { inlines: Inline[] }) {
   return (
     <>
-      {inlines.map((seg, i) =>
-        seg.bold ? (
-          <strong key={i} className="font-semibold text-foreground">
-            {seg.text}
-          </strong>
-        ) : (
-          <span key={i}>{seg.text}</span>
-        ),
-      )}
+      {inlines.map((seg, i) => {
+        if (seg.href) {
+          const safe = sanitizeHref(seg.href);
+          if (safe) {
+            return (
+              <a
+                key={i}
+                href={safe}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="font-medium text-foreground underline underline-offset-2 decoration-muted-foreground/40 hover:decoration-foreground break-words"
+              >
+                {seg.text}
+              </a>
+            );
+          }
+          return <span key={i}>{seg.text}</span>;
+        }
+        let node: ReactNode = seg.text;
+        if (seg.code) {
+          node = (
+            <code className="rounded bg-foreground/10 px-1 py-0.5 font-mono text-[0.9em]">
+              {seg.text}
+            </code>
+          );
+        }
+        if (seg.italic) node = <em className="italic">{node}</em>;
+        if (seg.bold) {
+          node = (
+            <strong className="font-semibold text-foreground">{node}</strong>
+          );
+        }
+        return <span key={i}>{node}</span>;
+      })}
     </>
   );
 }

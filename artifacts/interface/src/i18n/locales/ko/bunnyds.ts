@@ -1,0 +1,46 @@
+export default {
+  title: "bunny data services",
+  subtitle: "bunnyOS 관리형 데이터 + 추론 게이트웨이",
+  loading: "상태 불러오는 중...",
+  statusActive: "bunnyDS 활성화됨",
+  statusInactive: "bunnyDS 꺼짐",
+  activeHelp:
+    "데이터와 추론이 bunnyOS 관리형 게이트웨이를 통해 라우팅되며 지갑 단위로 과금됩니다. 아래에서 지갑을 연결하고 USDC 한도를 설정하세요.",
+  inactiveHelp:
+    "bunnyDS가 꺼져 있습니다. 데이터와 추론은 구성 탭에 입력한 본인 키를 사용합니다.",
+  toggleAria: "bunnyDS 전환",
+  saveFailed: "bunnyDS 업데이트에 실패했습니다. 다시 시도하세요",
+  byoPrefix: "오픈소스로 실행하거나 직접 키를 사용하시나요?",
+  byoLink: "구성으로 이동",
+  byoSuffix: "에서 제공자와 api 키를 설정하세요.",
+  connectTitle: "지갑 연결",
+  connectedTitle: "지갑 연결됨",
+  connectHelp:
+    "Base 지갑으로 메시지에 서명하여 bunnyDS 세션 토큰을 발급하세요. 사용량은 이 지갑으로 과금됩니다.",
+  connectedHelp:
+    "지갑이 bunnyDS에 연결되었습니다. 사용량은 아래 한도에서 차감됩니다.",
+  connectButton: "지갑 연결",
+  reconnect: "다시 연결",
+  connecting: "서명 대기 중...",
+  reopen: "지갑 다시 열기",
+  connectFailed: "bunnyDS 연결에 실패했습니다. 다시 시도하세요",
+  connectTimeout: "연결 시간이 초과되었습니다. 다시 시도하세요",
+  noApproval: "지갑 승인이 반환되지 않았습니다. 다시 시도하세요",
+  spendingTitle: "지출 한도",
+  spendingHelp:
+    "bunnyDS가 지갑에서 결제할 수 있는 USDC 한도를 승인하세요. 언제든지 상향할 수 있습니다.",
+  spendingLocked:
+    "게이트웨이에 bunnyDS 과금이 아직 활성화되지 않았습니다 — 현재 무료이며 한도가 필요 없습니다.",
+  spendingLimitLabel: "USDC 한도",
+  spendingUnit: "USDC",
+  spendingApprove: "한도 승인",
+  allowanceApproving: "제출 중...",
+  allowanceSubmitted: "지갑에서 한도를 승인하세요",
+  allowanceFailed: "한도 제출에 실패했습니다. 다시 시도하세요",
+  allowanceInvalid: "양의 USDC 금액을 입력하세요",
+  billingAllowance: "한도",
+  billingBalance: "잔액",
+  billingOwed: "미납액",
+  billingCredit: "사용 가능 한도",
+  billingNone: "—",
+} as const;

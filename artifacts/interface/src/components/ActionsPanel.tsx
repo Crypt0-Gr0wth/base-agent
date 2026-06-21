@@ -4,34 +4,23 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { playSound } from "@/lib/sound";
 import { useT, type TFn } from "@/i18n";
+import { PageHeader } from "@/components/PageHeader";
+import { ActionMarkdown } from "./ActionMarkdown";
 import { useTabs } from "./TabsContext";
-const ACTIONS_BUILDER_TAB: {
-  id: "actions-builder";
+const BUNNY_TAB: {
+  id: "bunny";
   title: string;
   titleKey: string;
-  kind: "actions-builder";
+  kind: "bunny";
   closable: boolean;
 } = {
-  id: "actions-builder",
-  title: "actions builder",
-  titleKey: "tabs.actionsBuilder",
-  kind: "actions-builder",
+  id: "bunny",
+  title: "bunnyEX",
+  titleKey: "tabs.bunny",
+  kind: "bunny",
   closable: false,
 };
-const ACTIONS_HISTORY_TAB: {
-  id: "actions-history";
-  title: string;
-  titleKey: string;
-  kind: "actions-history";
-  closable: boolean;
-} = {
-  id: "actions-history",
-  title: "actions history",
-  titleKey: "tabs.actionsHistory",
-  kind: "actions-history",
-  closable: false,
-};
-import { Check, Copy, EyeOff, History, Play, Settings2 } from "lucide-react";
+import { Check, Copy, EyeOff, Play, X } from "lucide-react";
 import { useState } from "react";
 
 type ActionKind = "alert" | "recommendation";
@@ -132,7 +121,8 @@ export function ActionsPanel() {
   const t = useT();
   const queryClient = useQueryClient();
   const setChatInput = useAppStore((s) => s.setChatInput);
-  const { setActive, tabs, openTab } = useTabs();
+  const setChatOpen = useAppStore((s) => s.setChatOpen);
+  const { setActive, openTab } = useTabs();
 
   const { data } = useQuery({
     queryKey: ["/api/actions"],
@@ -144,27 +134,117 @@ export function ActionsPanel() {
     refetchInterval: 30_000,
   });
 
+  // Recommendations posted by bunnies, aggregated server-side. These ids live in
+  // bunnyOS, not the local actions table: body-type recs can be executed (paste
+  // into chat + mark done via the bunny endpoint), contract-call recs are
+  // display-only and there's no hide control.
+  const { data: bunnyData } = useQuery({
+    queryKey: ["/api/bunny/recommendations"],
+    queryFn: async (): Promise<{ recommendations: BunnyAction[] }> => {
+      const r = await fetch("/api/bunny/recommendations");
+      if (!r.ok) return { recommendations: [] };
+      return (await r.json()) as { recommendations: BunnyAction[] };
+    },
+    refetchInterval: 60_000,
+  });
+  const fromBunnies = bunnyData?.recommendations ?? [];
+
+  // Whether this user's wallet is connected to bunny exchange (has a stored
+  // bunnyOS JWT). When disconnected the from-bunnies feed is always empty, so we
+  // show a "connect on bunny exchange" CTA instead of the no-signals hint.
+  const { data: bunnyStatus } = useQuery({
+    queryKey: ["/api/bunny/bunnyos/status"],
+    queryFn: async (): Promise<{ connected: boolean }> => {
+      const r = await fetch("/api/bunny/bunnyos/status");
+      if (!r.ok) return { connected: false };
+      return (await r.json()) as { connected: boolean };
+    },
+    refetchInterval: 30_000,
+  });
+  // Only treat as disconnected once the status query resolves to false —
+  // unknown/loading falls through to the normal empty hint so connected users
+  // with an empty feed never flash the connect CTA.
+  const bunnyDisconnected = bunnyStatus?.connected === false;
+
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/actions"] });
-  const openBuilder = () => {
-    openTab(ACTIONS_BUILDER_TAB);
-    setActive(ACTIONS_BUILDER_TAB.id);
-  };
-  const openHistory = () => {
-    openTab(ACTIONS_HISTORY_TAB);
-    setActive(ACTIONS_HISTORY_TAB.id);
+  const openBunnyExchange = () => {
+    openTab(BUNNY_TAB);
+    setActive(BUNNY_TAB.id);
   };
 
   const executeAction = async (a: BunnyAction) => {
     playSound("confirm");
     setChatInput(a.executeInstructions || a.title);
-    if (tabs.some((t) => t.id === "chat")) {
-      setActive("chat");
-    }
+    setChatOpen(true);
     queueMicrotask(() => {
       document.getElementById("chat-input")?.focus();
     });
     await fetch(`/api/actions/${a.id}/execute`, { method: "POST" });
     refresh();
+  };
+
+  // Execute a from-bunnies recommendation. Same UX as executeAction (paste the
+  // body into the chat composer), but these ids live in bunnyOS, not the local
+  // actions table, so we mark them done via the bunny endpoint and reconcile the
+  // separate query cache. Optimistically drop the row so it disappears at once.
+  const executeBunnyRecommendation = async (a: BunnyAction) => {
+    playSound("confirm");
+    setChatInput(a.executeInstructions || a.title);
+    setChatOpen(true);
+    queueMicrotask(() => {
+      document.getElementById("chat-input")?.focus();
+    });
+    await queryClient.cancelQueries({ queryKey: ["/api/bunny/recommendations"] });
+    queryClient.setQueryData<{ recommendations: BunnyAction[] }>(
+      ["/api/bunny/recommendations"],
+      (old) =>
+        old
+          ? { recommendations: old.recommendations.filter((x) => x.id !== a.id) }
+          : old,
+    );
+    try {
+      const r = await fetch(
+        `/api/bunny/recommendations/${encodeURIComponent(a.id)}/execute`,
+        { method: "POST" },
+      );
+      if (!r.ok) throw new Error(`execute failed: ${r.status}`);
+    } catch {
+      // Reconcile below — a failed mark-done refetches and the row reappears.
+    } finally {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/bunny/recommendations"],
+      });
+    }
+  };
+
+  // Dismiss a from-bunnies recommendation without executing it. Reuses the same
+  // per-user done-flag endpoint as execute (it only records the inbox id), so the
+  // item disappears from the feed and won't reappear — the difference is purely
+  // that we don't paste anything into chat. Works for any rec, including the
+  // display-only contract-call ones. Optimistic: drop the row immediately.
+  const dismissBunnyRecommendation = async (a: BunnyAction) => {
+    playSound("click");
+    await queryClient.cancelQueries({ queryKey: ["/api/bunny/recommendations"] });
+    queryClient.setQueryData<{ recommendations: BunnyAction[] }>(
+      ["/api/bunny/recommendations"],
+      (old) =>
+        old
+          ? { recommendations: old.recommendations.filter((x) => x.id !== a.id) }
+          : old,
+    );
+    try {
+      const r = await fetch(
+        `/api/bunny/recommendations/${encodeURIComponent(a.id)}/execute`,
+        { method: "POST" },
+      );
+      if (!r.ok) throw new Error(`dismiss failed: ${r.status}`);
+    } catch {
+      // Reconcile below — a failed mark-done refetches and the row reappears.
+    } finally {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/bunny/recommendations"],
+      });
+    }
   };
 
   // "hide" — soft-delete from the live inbox. The row stays in history
@@ -243,13 +323,12 @@ export function ActionsPanel() {
   const alerts = pending.filter((a) => a.kind === "alert");
 
   return (
-    <div className="h-full flex flex-col border-r border-border bg-background">
-      <div className="px-4 py-3 border-b border-border/50 shrink-0 flex items-center justify-between gap-2">
-        <h2 className="font-sans text-xs font-medium text-muted-foreground uppercase tracking-widest">
-          {t("actions.actionsInbox")}
-        </h2>
-        <div className="flex items-center gap-1">
-          {pending.length > 0 && (
+    <div className="h-full flex flex-col bg-background">
+      <PageHeader
+        title={t("actions.actionsInbox")}
+        subtitle={t("actions.inboxSubtitle")}
+        actions={
+          pending.length > 0 ? (
             <Button
               variant="ghost"
               size="sm"
@@ -260,49 +339,56 @@ export function ActionsPanel() {
               <EyeOff className="h-3 w-3 mr-1" />
               {t("actions.hideAll")}
             </Button>
-          )}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={openBuilder}
-            className="h-7 px-2 font-mono text-[11px] text-muted-foreground hover:text-foreground"
-            title={t("actions.builderTitle")}
-          >
-            <Settings2 className="h-3 w-3 mr-1" />
-            {t("actions.builder")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={openHistory}
-            className="h-7 px-2 font-mono text-[11px] text-muted-foreground hover:text-foreground"
-            title={t("actions.historyTitle")}
-          >
-            <History className="h-3 w-3 mr-1" />
-            {t("actions.history")}
-          </Button>
-        </div>
-      </div>
+          ) : undefined
+        }
+      />
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-5">
-        <ActionSection
-          label={t("actions.recommendations")}
-          sublabel={t("actions.recommendationsSublabel")}
-          items={recommendations}
-          executable
-          emptyHint={t("actions.recommendationsEmpty")}
-          onExecute={executeAction}
-          onHide={hideAction}
-        />
-        <ActionSection
-          label={t("actions.alerts")}
-          sublabel={t("actions.alertsSublabel")}
-          items={alerts}
-          executable={false}
-          emptyHint={t("actions.alertsEmpty")}
-          onExecute={executeAction}
-          onHide={hideAction}
-        />
+      {/* Three columns on wide screens (native | bunny | alerts), each
+          scrolling independently; collapses to a single scrolling stack on
+          narrow screens (mobile pane). */}
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden p-3">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 lg:h-full lg:min-h-0">
+          <div className="space-y-5 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+            <ActionSection
+              label={t("actions.recommendations")}
+              sublabel={t("actions.recommendationsSublabel")}
+              items={recommendations}
+              executable
+              emptyHint={t("actions.recommendationsEmpty")}
+              onExecute={executeAction}
+              onHide={hideAction}
+            />
+          </div>
+          <div className="space-y-5 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+            <ActionSection
+              label={t("actions.fromBunnies")}
+              sublabel={t("actions.fromBunniesSublabel")}
+              items={fromBunnies}
+              executable
+              readOnly
+              executeRequiresInstructions
+              emptyHint={t("actions.fromBunniesEmpty")}
+              onExecute={executeBunnyRecommendation}
+              onHide={hideAction}
+              onDismiss={dismissBunnyRecommendation}
+              disconnected={bunnyDisconnected}
+              disconnectedHint={t("actions.fromBunniesDisconnected")}
+              disconnectedCta={t("actions.fromBunniesConnectCta")}
+              onDisconnectedCta={openBunnyExchange}
+            />
+          </div>
+          <div className="space-y-5 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
+            <ActionSection
+              label={t("actions.alerts")}
+              sublabel={t("actions.alertsSublabel")}
+              items={alerts}
+              executable={false}
+              emptyHint={t("actions.alertsEmpty")}
+              onExecute={executeAction}
+              onHide={hideAction}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -315,6 +401,13 @@ function ActionSection({
   emptyHint,
   onExecute,
   onHide,
+  onDismiss,
+  readOnly = false,
+  executeRequiresInstructions = false,
+  disconnected = false,
+  disconnectedHint,
+  disconnectedCta,
+  onDisconnectedCta,
 }: {
   label: string;
   sublabel: string;
@@ -323,6 +416,23 @@ function ActionSection({
   emptyHint: string;
   onExecute: (a: BunnyAction) => void;
   onHide: (a: BunnyAction) => void;
+  // Optional dismiss handler for read-only (from-bunnies) items: records the
+  // per-user done-flag so the rec disappears without pasting into chat. Works for
+  // every rec, including the display-only contract-call ones.
+  onDismiss?: (a: BunnyAction) => void;
+  // Read-only items live in bunnyOS (not the local actions table), so they
+  // render without a hide control — dismissing them would 404.
+  readOnly?: boolean;
+  // When disconnected (wallet not connected to bunny exchange) and the list is
+  // empty, show a connect CTA that routes to the bunnyEX tab instead of the
+  // plain no-signals hint — the feed can only ever be empty in this state.
+  disconnected?: boolean;
+  disconnectedHint?: string;
+  disconnectedCta?: string;
+  onDisconnectedCta?: () => void;
+  // When set, only items that carry executeInstructions get an Execute button.
+  // Used by the from-bunnies feed where contract-call recs aren't executable.
+  executeRequiresInstructions?: boolean;
 }) {
   const t = useT();
   return (
@@ -333,14 +443,41 @@ function ActionSection({
           <span className="ml-1.5 text-muted-foreground">({items.length})</span>
         </span>
       </div>
-      {items.length === 0 && (
-        <div className="border border-dashed border-border/60 rounded-md px-3 py-4 text-center">
-          <span className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
-            {emptyHint}
-          </span>
+      {items.length === 0 && disconnected && onDisconnectedCta ? (
+        <div className="border border-dashed border-border/60 rounded-md px-3 py-4 text-center space-y-2">
+          <div className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+            {disconnectedHint ?? emptyHint}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={onDisconnectedCta}
+            className="h-6 px-2 font-mono text-[10px]"
+          >
+            {disconnectedCta}
+          </Button>
         </div>
+      ) : (
+        items.length === 0 && (
+          <div className="border border-dashed border-border/60 rounded-md px-3 py-4 text-center">
+            <span className="font-mono text-[10px] text-muted-foreground/70 leading-relaxed">
+              {emptyHint}
+            </span>
+          </div>
+        )
       )}
-      {items.map((a) => (
+      {items.map((a) => {
+        // For from-bunnies, only body-type recs (with executeInstructions) are
+        // executable; contract-call recs stay display-only.
+        const showExecute =
+          executable && (!executeRequiresInstructions || !!a.executeInstructions);
+        // Hide the "execute" preview box when it would just duplicate the body
+        // (true for from-bunnies, where instructions === description).
+        const showExecuteBox =
+          showExecute &&
+          !!a.executeInstructions &&
+          a.executeInstructions !== a.description;
+        return (
         <div
           key={a.id}
           className="border border-border rounded-md p-3 bg-foreground/5 space-y-2 group"
@@ -355,7 +492,7 @@ function ActionSection({
               ●
             </span>
             <div className="flex-1 min-w-0">
-              <div className="font-mono text-xs text-foreground font-medium leading-snug">
+              <div className="font-mono text-xs text-foreground font-medium leading-snug break-words">
                 {a.title}
               </div>
               <div
@@ -368,52 +505,82 @@ function ActionSection({
                 {relativeTime(a.createdAt, t)}
               </div>
             </div>
-            <button
-              onClick={() => onHide(a)}
-              className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-0.5 -m-0.5"
-              aria-label={t("actions.hide")}
-              title={t("actions.hideFromInbox")}
-            >
-              <EyeOff className="h-3 w-3" />
-            </button>
+            {!readOnly && (
+              <button
+                onClick={() => onHide(a)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-0.5 -m-0.5"
+                aria-label={t("actions.hide")}
+                title={t("actions.hideFromInbox")}
+              >
+                <EyeOff className="h-3 w-3" />
+              </button>
+            )}
+            {readOnly && onDismiss && (
+              <button
+                onClick={() => onDismiss(a)}
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground p-0.5 -m-0.5"
+                aria-label={t("actions.dismiss")}
+                title={t("actions.dismissTitle")}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
           </div>
-          <div className="font-mono text-[11px] text-foreground/80 leading-relaxed break-words">
-            {a.description}
-          </div>
+          <ActionMarkdown
+            source={a.description}
+            className="font-mono text-[11px] text-foreground/80 leading-relaxed break-words"
+          />
           {a.tokens && a.tokens.length > 0 && (
             <TokensMentioned tokens={a.tokens} />
           )}
-          {executable && a.executeInstructions && (
+          {showExecuteBox && (
             <div className="font-mono text-[10px] text-muted-foreground/80 bg-background/40 border border-border/40 rounded px-2 py-1 leading-relaxed break-words">
               <span className="text-muted-foreground">{t("actions.executeLabel")}</span>{" "}
               <span className="text-foreground/80">{a.executeInstructions}</span>
             </div>
           )}
-          <div className="flex items-center gap-2">
-            {executable && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onExecute(a)}
-                className="h-6 px-2 font-mono text-[10px]"
-                title={t("actions.executeInstructionsTitle")}
-              >
-                <Play className="h-2.5 w-2.5 mr-1" />
-                {t("actions.execute")}
-              </Button>
-            )}
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => onHide(a)}
-              className="h-6 px-2 font-mono text-[10px] text-muted-foreground"
-              title={t("actions.hideFromInbox")}
-            >
-              {t("actions.hide")}
-            </Button>
-          </div>
+          {(showExecute || !readOnly || (readOnly && onDismiss)) && (
+            <div className="flex items-center gap-2">
+              {showExecute && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onExecute(a)}
+                  className="h-6 px-2 font-mono text-[10px]"
+                  title={t("actions.executeInstructionsTitle")}
+                >
+                  <Play className="h-2.5 w-2.5 mr-1" />
+                  {t("actions.execute")}
+                </Button>
+              )}
+              {!readOnly && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onHide(a)}
+                  className="h-6 px-2 font-mono text-[10px] text-muted-foreground"
+                  title={t("actions.hideFromInbox")}
+                >
+                  {t("actions.hide")}
+                </Button>
+              )}
+              {readOnly && onDismiss && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onDismiss(a)}
+                  className="h-6 px-2 font-mono text-[10px] text-muted-foreground"
+                  title={t("actions.dismissTitle")}
+                >
+                  <X className="h-2.5 w-2.5 mr-1" />
+                  {t("actions.dismiss")}
+                </Button>
+              )}
+            </div>
+          )}
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

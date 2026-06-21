@@ -1,27 +1,90 @@
-// A tiny, tolerant markdown parser for the AI report. Produces a flat block
-// list that both the on-screen renderer (DOM) and the PDF renderer consume, so
-// the two stay perfectly consistent. Intentionally minimal: headings, bullet
-// lists, paragraphs, and inline **bold**. It tolerates partial/streaming input
-// (e.g. an unclosed **bold**) without throwing.
+// A tiny, tolerant markdown parser for the AI report and the actions inbox.
+// Produces a flat block list that the on-screen renderers (report + actions)
+// and the PDF renderer consume, so they stay consistent. Intentionally minimal:
+// headings, bullet lists, paragraphs, and inline **bold**, *italic*, `code`, and
+// [links](url). It tolerates partial/streaming input (e.g. an unclosed **bold**)
+// without throwing.
 
-export type Inline = { text: string; bold: boolean };
+export type Inline = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  code?: boolean;
+  href?: string;
+};
+
+// Only allow http(s) links to be rendered as anchors. Anything else
+// (javascript:, data:, mailto:, relative, etc.) is rejected so a malicious
+// agent-authored or imported link can't execute script when clicked. Callers
+// render the link text as plain prose when this returns null.
+export function sanitizeHref(href: string): string | null {
+  const trimmed = href.trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : null;
+}
 
 export type Block =
   | { type: "heading"; level: 1 | 2 | 3; inlines: Inline[] }
   | { type: "paragraph"; inlines: Inline[] }
   | { type: "list"; items: Inline[][] };
 
+// Inline tokenizer. Walks the string once, peeling off the next markdown span
+// (link, bold, code, italic) or accumulating plain text. Order matters: links
+// and **bold** are matched before single-char *italic* so `**x**` never reads as
+// italic. Unmatched/unclosed delimiters fall through as plain text, which keeps
+// streaming input safe.
 export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];
-  // Split on ** delimiters; odd segments are bold. A trailing unclosed ** just
-  // renders the rest as bold, which is fine for streaming.
-  const parts = src.split("**");
-  for (let i = 0; i < parts.length; i++) {
-    const text = parts[i];
-    if (text === "") continue;
-    out.push({ text, bold: i % 2 === 1 });
+  let plain = "";
+  const flushPlain = () => {
+    if (plain) {
+      out.push({ text: plain });
+      plain = "";
+    }
+  };
+
+  let i = 0;
+  while (i < src.length) {
+    const rest = src.slice(i);
+
+    const link = /^\[([^\]]+)\]\(([^)\s]+)\)/.exec(rest);
+    if (link) {
+      flushPlain();
+      out.push({ text: link[1], href: link[2] });
+      i += link[0].length;
+      continue;
+    }
+
+    const bold = /^\*\*([\s\S]+?)\*\*/.exec(rest);
+    if (bold) {
+      flushPlain();
+      out.push({ text: bold[1], bold: true });
+      i += bold[0].length;
+      continue;
+    }
+
+    const code = /^`([^`]+?)`/.exec(rest);
+    if (code) {
+      flushPlain();
+      out.push({ text: code[1], code: true });
+      i += code[0].length;
+      continue;
+    }
+
+    const italic =
+      /^\*([^*\s][^*]*?)\*/.exec(rest) || /^_([^_\s][^_]*?)_/.exec(rest);
+    if (italic) {
+      flushPlain();
+      out.push({ text: italic[1], italic: true });
+      i += italic[0].length;
+      continue;
+    }
+
+    plain += src[i];
+    i += 1;
   }
-  if (out.length === 0) out.push({ text: "", bold: false });
+
+  flushPlain();
+  if (out.length === 0) out.push({ text: "" });
   return out;
 }
 
@@ -79,10 +142,4 @@ export function parseMarkdown(src: string): Block[] {
   flushParagraph();
   flushList();
   return blocks;
-}
-
-// Flattens inline runs to plain text — used for the PDF document title and any
-// place that needs the raw string of a block.
-export function inlineText(inlines: Inline[]): string {
-  return inlines.map((i) => i.text).join("");
 }

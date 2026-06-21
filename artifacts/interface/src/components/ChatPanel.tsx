@@ -1,10 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState, useRef, useEffect, Fragment } from "react";
 import { useAppStore } from "@/lib/store";
+import {
+  useChat,
+  APPROVAL_URL_RE,
+  type ChatMessage,
+  type ToolEvent,
+} from "./ChatContextDef";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { playSound } from "@/lib/sound";
-import { useT, useLang, type TFn } from "@/i18n";
+import { useT, type TFn } from "@/i18n";
 import {
   ArrowUp,
   ChevronRight,
@@ -21,55 +25,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
-
-type ChatSummary = { id: string; title: string; updatedAt: string };
-type StoredSession = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  messages: Array<{
-    id: string;
-    role: "user" | "bunny";
-    text: string;
-    timestamp: string;
-    tools?: ToolEvent[];
-  }>;
-};
-
-type ToolEvent = {
-  id: string;
-  name: string;
-  args: unknown;
-  result?: string;
-  isError?: boolean;
-  done: boolean;
-};
-
-interface ChatMessage {
-  id: string;
-  role: "user" | "bunny";
-  text: string;
-  timestamp: string;
-  tools?: ToolEvent[];
-  thinking?: boolean;
-  streaming?: boolean;
-}
-
-type StreamEvent =
-  | { type: "model"; model: string }
-  | { type: "thinking" }
-  | { type: "tool_call"; id: string; name: string; args: unknown }
-  | { type: "tool_result"; id: string; name: string; content: string; isError?: boolean }
-  | { type: "content"; delta: string }
-  | { type: "done"; model: string; response: string }
-  | { type: "error"; message: string };
-
-// Match any URL on a Base/Coinbase approval host. Server-side, the agent
-// extracts these from tool results and appends them to the final reply if
-// missing, so as long as the host is in this set we'll render a button.
-const APPROVAL_URL_RE =
-  /(https:\/\/(?:account\.base\.app|base\.org|www\.base\.org|wallet\.base\.org|account\.base\.org|keys\.coinbase\.com|wallet\.coinbase\.com)\/[^\s)\]"']+)/g;
 
 function approvalLabel(url: string, t: TFn): string {
   if (url.includes("base.app") || url.includes("base.org"))
@@ -317,6 +272,176 @@ function parseMessageText(text: string) {
   });
 }
 
+// --- markdown table support -------------------------------------------------
+// The agent sometimes replies with GitHub-style pipe tables. Detect them and
+// render real <table>s; everything else stays terminal-style pre-wrap text.
+
+type CellAlign = "left" | "center" | "right";
+
+function splitRow(line: string): string[] {
+  let s = line.trim();
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|")) s = s.slice(0, -1);
+  // split on unescaped pipes, then unescape \| inside cells
+  return s.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, "|").trim());
+}
+
+function isSeparatorRow(line: string): boolean {
+  if (!line.includes("|")) return false;
+  const cells = splitRow(line);
+  return cells.length > 0 && cells.every((c) => /^:?-+:?$/.test(c));
+}
+
+function parseAlign(sepLine: string): CellAlign[] {
+  return splitRow(sepLine).map((c) => {
+    const left = c.startsWith(":");
+    const right = c.endsWith(":");
+    if (left && right) return "center";
+    if (right) return "right";
+    return "left";
+  });
+}
+
+type MsgBlock =
+  | { type: "text"; text: string }
+  | { type: "table"; header: string[]; rows: string[][]; align: CellAlign[] };
+
+function parseMessageBlocks(text: string): MsgBlock[] {
+  const lines = text.split("\n");
+  const blocks: MsgBlock[] = [];
+  let textBuf: string[] = [];
+  const flushText = () => {
+    const joined = textBuf.join("\n").replace(/^\n+|\n+$/g, "");
+    if (joined !== "") blocks.push({ type: "text", text: joined });
+    textBuf = [];
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const next = lines[i + 1];
+    if (
+      line.includes("|") &&
+      next !== undefined &&
+      isSeparatorRow(next) &&
+      !isSeparatorRow(line)
+    ) {
+      flushText();
+      const header = splitRow(line);
+      const align = parseAlign(next);
+      const rows: string[][] = [];
+      i += 2; // consume header + separator
+      while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") {
+        rows.push(splitRow(lines[i]));
+        i++;
+      }
+      i--; // for-loop re-increments
+      blocks.push({ type: "table", header, rows, align });
+      continue;
+    }
+    textBuf.push(line);
+  }
+  flushText();
+  return blocks;
+}
+
+function alignClass(a: CellAlign | undefined): string {
+  return a === "center" ? "text-center" : a === "right" ? "text-right" : "text-left";
+}
+
+function CellInlines({ text }: { text: string }) {
+  const parts = text.split("**");
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 ? (
+          <strong key={i} className="font-semibold text-foreground">
+            {p}
+          </strong>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function MarkdownTable({
+  header,
+  rows,
+  align,
+}: {
+  header: string[];
+  rows: string[][];
+  align: CellAlign[];
+}) {
+  return (
+    <div className="my-2 overflow-x-auto rounded border border-border">
+      <table className="w-full border-collapse text-left">
+        <thead>
+          <tr className="border-b border-border bg-foreground/5">
+            {header.map((h, i) => (
+              <th
+                key={i}
+                className={cn(
+                  "px-2.5 py-1.5 font-mono text-[11px] font-semibold text-foreground whitespace-nowrap",
+                  alignClass(align[i]),
+                )}
+              >
+                <CellInlines text={h} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri} className="border-b border-border/40 last:border-b-0">
+              {header.map((_, ci) => (
+                <td
+                  key={ci}
+                  className={cn(
+                    "px-2.5 py-1.5 font-mono text-[11px] text-foreground/90 align-top",
+                    alignClass(align[ci]),
+                  )}
+                >
+                  <CellInlines text={r[ci] ?? ""} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MessageBody({ text, streaming }: { text: string; streaming?: boolean }) {
+  const blocks = parseMessageBlocks(text);
+  return (
+    <>
+      {blocks.map((b, i) => {
+        const isLast = i === blocks.length - 1;
+        if (b.type === "table") {
+          return (
+            <Fragment key={i}>
+              <MarkdownTable header={b.header} rows={b.rows} align={b.align} />
+              {streaming && isLast && (
+                <span className="animate-pulse text-green">▋</span>
+              )}
+            </Fragment>
+          );
+        }
+        return (
+          <div key={i} className="whitespace-pre-wrap">
+            {parseMessageText(b.text)}
+            {streaming && isLast && (
+              <span className="animate-pulse text-green">▋</span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 function summarizeArgs(args: unknown): string {
   if (!args || typeof args !== "object") return "";
   try {
@@ -430,112 +555,20 @@ function BunnyStatusLine({ message }: { message: ChatMessage }) {
 
 export function ChatPanel() {
   const t = useT();
-  const { lang } = useLang();
-  const queryClient = useQueryClient();
   const chatInput = useAppStore((state) => state.chatInput);
   const setChatInput = useAppStore((state) => state.setChatInput);
-  const addFeedEntry = useAppStore((state) => state.addFeedEntry);
-
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sessionId, setSessionId] = useState<string | null>(null);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [lastStatus, setLastStatus] = useState<"done" | "error" | null>(null);
+  const {
+    messages,
+    sessionId,
+    isStreaming,
+    chatList,
+    handleSubmit,
+    startNewChat,
+    loadChat,
+    deleteChat,
+  } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  sessionIdRef.current = sessionId;
-  const lastUserTextRef = useRef<string>("");
-
-  const { data: chatList } = useQuery({
-    queryKey: ["/api/chats"],
-    queryFn: async () => {
-      const r = await fetch("/api/chats");
-      if (!r.ok) return [] as ChatSummary[];
-      const j = (await r.json()) as unknown;
-      return Array.isArray(j) ? (j as ChatSummary[]) : ([] as ChatSummary[]);
-    },
-    refetchInterval: 30_000,
-  });
-
-  const saveCurrentSession = useCallback(
-    async (msgs: ChatMessage[], explicitId?: string) => {
-      const id = explicitId ?? sessionIdRef.current;
-      if (!id || msgs.length === 0) return;
-      const payload = {
-        messages: msgs.map((m) => ({
-          id: m.id,
-          role: m.role,
-          text: m.text,
-          timestamp: m.timestamp,
-          ...(m.tools ? { tools: m.tools } : {}),
-        })),
-      };
-      try {
-        const r = await fetch(`/api/chats/${encodeURIComponent(id)}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        if (!r.ok) throw new Error(`save ${id} failed: HTTP ${r.status}`);
-        queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
-      } catch (err) {
-        console.warn("[chat] persist failed", err);
-      }
-    },
-    [queryClient],
-  );
-
-  const ensureSessionId = useCallback(async (): Promise<string> => {
-    if (sessionIdRef.current) return sessionIdRef.current;
-    const r = await fetch("/api/chats", { method: "POST" });
-    const created = (await r.json()) as StoredSession;
-    sessionIdRef.current = created.id;
-    setSessionId(created.id);
-    queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
-    return created.id;
-  }, [queryClient]);
-
-  const startNewChat = () => {
-    if (isStreaming) abortRef.current?.abort();
-    sessionIdRef.current = null;
-    setSessionId(null);
-    setMessages([]);
-  };
-
-  const loadChat = async (id: string) => {
-    if (isStreaming) abortRef.current?.abort();
-    try {
-      const r = await fetch(`/api/chats/${encodeURIComponent(id)}`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const s = (await r.json()) as StoredSession;
-      sessionIdRef.current = s.id;
-      setSessionId(s.id);
-      setMessages(
-        s.messages.map((m) => ({
-          id: m.id,
-          role: m.role,
-          text: m.text,
-          timestamp: m.timestamp,
-          ...(m.tools ? { tools: m.tools as ToolEvent[] } : {}),
-        })),
-      );
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const deleteChat = async (id: string, e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      await fetch(`/api/chats/${encodeURIComponent(id)}`, { method: "DELETE" });
-      queryClient.invalidateQueries({ queryKey: ["/api/chats"] });
-      if (sessionIdRef.current === id) startNewChat();
-    } catch {
-      /* ignore */
-    }
-  };
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -543,216 +576,10 @@ export function ChatPanel() {
     }
   }, [messages, isStreaming]);
 
-  useEffect(() => {
-    return () => {
-      abortRef.current?.abort();
-    };
-  }, []);
-
-  const updateBunny = (id: string, updater: (m: ChatMessage) => ChatMessage) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? updater(m) : m)));
-  };
-
-  const handleSubmit = async (overrideText?: string) => {
-    if (isStreaming) return;
-    const sourceText = overrideText ?? chatInput;
-    if (!sourceText.trim()) return;
-
-    playSound("confirm");
-    const userText = sourceText.trim();
-    lastUserTextRef.current = userText;
-    const ts = new Date().toTimeString().split(" ")[0] ?? "";
-    const userMessage: ChatMessage = {
-      id: Math.random().toString(36).substring(7),
-      role: "user",
-      text: userText,
-      timestamp: ts,
-    };
-    const bunnyId = Math.random().toString(36).substring(7);
-    const bunnyMessage: ChatMessage = {
-      id: bunnyId,
-      role: "bunny",
-      text: "",
-      timestamp: new Date().toTimeString().split(" ")[0] ?? "",
-      tools: [],
-      thinking: true,
-      streaming: true,
-    };
-
-    const priorMessages = messages.slice();
-    setMessages((prev) => [...prev, userMessage, bunnyMessage]);
-    setChatInput("");
-    setIsStreaming(true);
-    setLastStatus(null);
-
-    let activeSessionId = "";
-    try {
-      activeSessionId = await ensureSessionId();
-    } catch {
-      activeSessionId = sessionIdRef.current ?? "";
-    }
-
-    // Local mirror of the bunny message — survives abort / session switch and
-    // is the source of truth for the single final save.
-    let localBunny: ChatMessage = { ...bunnyMessage };
-    const mutateBunny = (updater: (m: ChatMessage) => ChatMessage) => {
-      localBunny = updater(localBunny);
-      updateBunny(bunnyId, updater);
-    };
-
-    const abort = new AbortController();
-    abortRef.current = abort;
-    let sawDone = false;
-    let sawError = false;
-    let finalResponse = "";
-
-    const processChunk = (chunk: string) => {
-      const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"));
-      if (!dataLine) return;
-      const data = dataLine.slice(5).trim();
-      if (!data) return;
-      let ev: StreamEvent;
-      try {
-        ev = JSON.parse(data) as StreamEvent;
-      } catch {
-        return;
-      }
-      if (ev.type === "thinking") {
-        mutateBunny((m) => ({ ...m, thinking: true }));
-      } else if (ev.type === "tool_call") {
-        mutateBunny((m) => ({
-          ...m,
-          thinking: false,
-          tools: [
-            ...(m.tools ?? []),
-            { id: ev.id, name: ev.name, args: ev.args, done: false },
-          ],
-        }));
-      } else if (ev.type === "tool_result") {
-        mutateBunny((m) => ({
-          ...m,
-          tools: (m.tools ?? []).map((t) =>
-            t.id === ev.id
-              ? { ...t, result: ev.content, isError: ev.isError, done: true }
-              : t,
-          ),
-        }));
-      } else if (ev.type === "content") {
-        mutateBunny((m) => ({
-          ...m,
-          thinking: false,
-          text: m.text + ev.delta,
-        }));
-      } else if (ev.type === "done") {
-        sawDone = true;
-        finalResponse = ev.response;
-        mutateBunny((m) => ({
-          ...m,
-          text: ev.response || m.text,
-          thinking: false,
-          streaming: false,
-        }));
-      } else if (ev.type === "error") {
-        sawError = true;
-        mutateBunny((m) => ({
-          ...m,
-          text: `error: ${ev.message}`,
-          thinking: false,
-          streaming: false,
-        }));
-      }
-    };
-
-    try {
-      const history = messages
-        .filter((m) => m.text && m.text.trim() && !m.text.startsWith("error:"))
-        .slice(-20)
-        .map((m) => ({
-          role: m.role === "user" ? ("user" as const) : ("assistant" as const),
-          content: m.text,
-        }));
-      const resp = await fetch("/api/chat/stream", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userText, history, lang }),
-        signal: abort.signal,
-      });
-      if (!resp.ok || !resp.body) {
-        throw new Error(`HTTP ${resp.status}`);
-      }
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) {
-          buf += decoder.decode();
-          if (buf.trim()) processChunk(buf);
-          break;
-        }
-        buf += decoder.decode(value, { stream: true });
-        let idx: number;
-        while ((idx = buf.indexOf("\n\n")) !== -1) {
-          const chunk = buf.slice(0, idx);
-          buf = buf.slice(idx + 2);
-          processChunk(chunk);
-        }
-      }
-
-      if (sawError) {
-        setLastStatus("error");
-        addFeedEntry({ message: t("chat.feedFailedToRespond"), status: "error" });
-      } else if (sawDone) {
-        setLastStatus("done");
-        let status: "success" | "pending" | "error" = "success";
-        const hasApproval = APPROVAL_URL_RE.test(finalResponse);
-        APPROVAL_URL_RE.lastIndex = 0;
-        if (hasApproval) status = "pending";
-        else if (/error|failed/i.test(finalResponse)) status = "error";
-        addFeedEntry({ message: t("chat.feedRespondedToUser"), status });
-      } else {
-        setLastStatus("error");
-        mutateBunny((m) => ({
-          ...m,
-          text: m.text || "(stream ended unexpectedly)",
-          thinking: false,
-          streaming: false,
-        }));
-        addFeedEntry({ message: t("chat.feedStreamInterrupted"), status: "error" });
-      }
-
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setLastStatus("error");
-      mutateBunny((m) => ({
-        ...m,
-        text: m.text || `error: ${msg}`,
-        thinking: false,
-        streaming: false,
-      }));
-      if (!sawError) addFeedEntry({ message: "Failed to respond", status: "error" });
-    } finally {
-      // Single, terminal save using a snapshot we own — immune to user
-      // switching/clearing chats mid-stream, and only fires once per turn so
-      // no out-of-order overwrites are possible. We save on errors too so the
-      // failed turn (tool chips + partial text) stays in chat history.
-      if (activeSessionId) {
-        const finalMessages: ChatMessage[] = [
-          ...priorMessages,
-          userMessage,
-          { ...localBunny, streaming: false, thinking: false },
-        ];
-        void saveCurrentSession(finalMessages, activeSessionId);
-      }
-      setIsStreaming(false);
-      abortRef.current = null;
-    }
-  };
-
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
@@ -850,15 +677,12 @@ export function ChatPanel() {
               </div>
             ) : (
               <div className="space-y-1">
-                {(m.tools ?? []).map((t) => (
-                  <ToolCallChip key={t.id} tool={t} />
+                {(m.tools ?? []).map((tl) => (
+                  <ToolCallChip key={tl.id} tool={tl} />
                 ))}
                 {m.text && (
-                  <div className="font-mono text-sm leading-relaxed whitespace-pre-wrap text-green">
-                    {parseMessageText(m.text)}
-                    {m.streaming && (
-                      <span className="animate-pulse text-green">▋</span>
-                    )}
+                  <div className="font-mono text-sm leading-relaxed text-green">
+                    <MessageBody text={m.text} streaming={m.streaming} />
                   </div>
                 )}
                 <BunnyStatusLine message={m} />
@@ -878,8 +702,8 @@ export function ChatPanel() {
             onKeyDown={handleKeyDown}
             disabled={isStreaming}
             placeholder={t("chat.inputPlaceholder")}
-            className="flex-1 min-w-0 h-9 max-h-[140px] bg-transparent px-1 py-2 font-mono text-sm leading-5 resize-none focus:outline-none disabled:opacity-50"
-            rows={1}
+            className="flex-1 min-w-0 min-h-[3.75rem] max-h-[160px] bg-transparent px-1 py-1.5 font-mono text-xs leading-5 resize-none focus:outline-none disabled:opacity-50"
+            rows={3}
           />
           <button
             type="button"

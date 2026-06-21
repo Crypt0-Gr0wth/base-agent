@@ -18,6 +18,7 @@ export default {
   hoursAgo: "{n}시간 전",
   daysAgo: "{n}일 전",
   actionsBuilderTitle: "액션 빌더",
+  subtitle: "24/7 실행되는 액션을 만들고 관리하세요.",
   builderIntro:
     "각 액션은 일정에 따라 실행되는 범위 지정 에이전트입니다. 감시할 내용을 작성하고 호출할 수 있는 도구를 선택하면, 알림과 원클릭 추천을 받은편지함에 게시합니다.",
   pickActionBefore: "편집할 액션을 왼쪽에서 선택하거나 클릭하세요",

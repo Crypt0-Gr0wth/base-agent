@@ -14,10 +14,15 @@ export type Lang = (typeof LANGS)[number];
 export const SELECTABLE_LANGS: readonly Lang[] = ["zh", "en", "ko"];
 
 // Shown to first-time visitors with no saved preference.
-export const DEFAULT_LANG: Lang = "zh";
+export const DEFAULT_LANG: Lang = "en";
 // Used to fill any missing translation in the active language.
 export const FALLBACK_LANG: Lang = "en";
 export const STORAGE_KEY = "bunny.lang";
+// Set when a user explicitly picks a language while signed out, so that single
+// anonymous choice is carried up to their account on the next login — instead of
+// the login overwriting their stored account preference with this device's
+// (possibly default) value.
+export const LANG_EXPLICIT_KEY = "bunny.lang.explicit";
 
 export const LANG_LABELS: Record<Lang, string> = {
   zh: "中文",

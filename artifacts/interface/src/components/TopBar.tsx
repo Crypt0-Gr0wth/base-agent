@@ -1,24 +1,67 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useHealthCheck,
   getGetBaseMcpStatusQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
+import { Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import logo from "@assets/logo.png";
+import logoWhite from "@assets/logo-white.png";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/theme";
 import { useT, useLang } from "@/i18n";
-import { SELECTABLE_LANGS, LANG_LABELS, type Lang } from "@/i18n/config";
+import {
+  SELECTABLE_LANGS,
+  LANG_LABELS,
+  LANG_EXPLICIT_KEY,
+  isLang,
+  type Lang,
+} from "@/i18n/config";
 
 export function TopBar() {
   const queryClient = useQueryClient();
   const auth = useAuth();
   const t = useT();
+  const { theme, toggleTheme } = useTheme();
   const { lang, setLang } = useLang();
+  // Always-current language, so the async login sync can tell whether the user
+  // changed languages mid-flight (and avoid clobbering that fresh choice).
+  const langRef = useRef(lang);
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
   const { data: healthData, isError: isHealthError } = useHealthCheck({
     query: { queryKey: ["/api/healthz"], refetchInterval: 5000 },
   });
+
+  // $OS price, always visible in the terminal header. Polls the public
+  // os-price endpoint; degrades to just "$OS" if the price is unavailable.
+  const [osPrice, setOsPrice] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const load = () => {
+      void fetch("/api/bunny/os-price", { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j: { priceUsd?: unknown } | null) => {
+          if (!cancelled && j && typeof j.priceUsd === "number") {
+            setOsPrice(j.priceUsd);
+          }
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = window.setInterval(load, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, []);
+  const fmtOsPrice = (n: number) => {
+    const digits = n < 0.01 ? 6 : n < 1 ? 4 : 2;
+    return `$${n.toFixed(digits)}`;
+  };
 
   useEffect(() => {
     const onMessage = (ev: MessageEvent) => {
@@ -46,11 +89,68 @@ export function TopBar() {
     }).catch(() => {});
   };
 
-  // Once authenticated, push the current (browser-stored) language up so the
-  // server's preference matches what the user sees, even if they never touch
-  // the switcher this session.
+  // On login, the account's saved language is the source of truth: pull it and
+  // apply it so the UI matches the user's preference on every device — even with
+  // empty/cleared localStorage (which used to fall back to the default and get
+  // pushed up, overwriting their real choice). Exception: if the user explicitly
+  // picked a language while signed out this session, carry that one choice up to
+  // the account once instead of overwriting it.
   useEffect(() => {
-    if (auth.authenticated) persistLang(lang);
+    if (!auth.authenticated) return;
+    let cancelled = false;
+    const startedWith = langRef.current;
+    void (async () => {
+      // Carryover branch: a language deliberately chosen while signed out wins
+      // over the account value, exactly once. Clear the flag only on a confirmed
+      // write so a transient failure doesn't silently drop the choice.
+      let hasExplicit = false;
+      try {
+        hasExplicit = window.localStorage.getItem(LANG_EXPLICIT_KEY) === "1";
+      } catch {
+        /* ignore storage errors */
+      }
+      if (hasExplicit) {
+        try {
+          const r = await fetch("/api/settings/lang", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ lang: langRef.current }),
+          });
+          if (r.ok) {
+            try {
+              window.localStorage.removeItem(LANG_EXPLICIT_KEY);
+            } catch {
+              /* ignore */
+            }
+          }
+        } catch {
+          /* keep the flag and retry carryover on the next login */
+        }
+        return;
+      }
+      // Default branch: the account's saved language is the source of truth.
+      try {
+        const r = await fetch("/api/settings/lang", { credentials: "include" });
+        if (!r.ok) return;
+        const j = (await r.json()) as { lang?: unknown };
+        // Apply only if the user hasn't changed languages since this sync began,
+        // so a fresh manual selection during the fetch is never overwritten.
+        if (
+          !cancelled &&
+          isLang(j.lang) &&
+          langRef.current === startedWith &&
+          j.lang !== startedWith
+        ) {
+          setLang(j.lang);
+        }
+      } catch {
+        /* offline or not signed in — keep the current language */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auth.authenticated]);
 
@@ -58,9 +158,25 @@ export function TopBar() {
 
   return (
     <div className="h-14 sm:h-16 w-full flex items-center justify-between px-3 sm:px-4 border-b border-border bg-background shrink-0">
-      <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity" aria-label="BunnyOS home">
-        <img src={logo} alt="logo" className="h-9 sm:h-12 w-auto" />
-      </Link>
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+        <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity" aria-label="BunnyOS home">
+          <img src={logo} alt="logo" className="h-9 sm:h-12 w-auto block dark:hidden" />
+          <img src={logoWhite} alt="logo" className="h-9 sm:h-12 w-auto hidden dark:block" />
+        </Link>
+        <a
+          href="https://dexscreener.com/base/0x525a1f4db6384434a9c9d413c6d86ebbf432a47b"
+          target="_blank"
+          rel="noreferrer"
+          className="hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded border border-border/70 bg-background hover:bg-foreground/5 transition-colors font-mono text-xs whitespace-nowrap"
+          title="OS price"
+          data-testid="link-os-price"
+        >
+          <span className="font-semibold text-foreground">OS</span>
+          <span className="text-muted-foreground">
+            {osPrice != null ? fmtOsPrice(osPrice) : "—"}
+          </span>
+        </a>
+      </div>
 
       <div className="flex items-center gap-2">
         <label className="sr-only" htmlFor="lang-select">
@@ -73,6 +189,16 @@ export function TopBar() {
             const next = e.target.value as Lang;
             setLang(next);
             persistLang(next);
+            // While signed out, remember that this was a deliberate choice so the
+            // next login carries it up instead of pulling the account default.
+            // While signed in, persistLang already made the server authoritative.
+            if (!auth.authenticated) {
+              try {
+                window.localStorage.setItem(LANG_EXPLICIT_KEY, "1");
+              } catch {
+                /* ignore */
+              }
+            }
           }}
           aria-label={t("topbar.language")}
           className="px-2 py-1 sm:px-2.5 sm:py-2 border border-border/70 text-foreground bg-background hover:bg-foreground/5 rounded font-sans text-xs font-medium transition-colors cursor-pointer"
@@ -84,15 +210,20 @@ export function TopBar() {
             </option>
           ))}
         </select>
-        <a
-          href="https://app.virtuals.io/virtuals/80805"
-          target="_blank"
-          rel="noreferrer"
-          className="px-2 py-1 sm:px-3 sm:py-2 border border-border/70 text-foreground hover:bg-foreground/5 rounded font-sans text-xs font-medium transition-colors inline-flex items-center justify-center gap-1.5"
-          data-testid="link-support-virtuals-header"
+        <button
+          onClick={toggleTheme}
+          aria-pressed={theme === "dark"}
+          aria-label={theme === "dark" ? t("topbar.themeLight") : t("topbar.themeDark")}
+          title={theme === "dark" ? t("topbar.themeLight") : t("topbar.themeDark")}
+          className="p-1.5 sm:p-2 border border-border/70 text-foreground bg-background hover:bg-foreground/5 rounded transition-colors cursor-pointer inline-flex items-center justify-center"
+          data-testid="button-theme-toggle"
         >
-          {t("topbar.supportOnVirtuals")}
-        </a>
+          {theme === "dark" ? (
+            <Sun className="w-4 h-4" />
+          ) : (
+            <Moon className="w-4 h-4" />
+          )}
+        </button>
         {auth.authenticated && auth.walletAddress && (
           <button
             onClick={() => void auth.logout()}

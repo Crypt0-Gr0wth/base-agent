@@ -7,13 +7,22 @@ export default {
   tokensMentioned: "언급된 토큰",
   copyTokenTitle: "{address}{chain} — 클릭하여 복사",
   actionsInbox: "액션 받은편지함",
+  inboxSubtitle:
+    "액션에서 오는 실시간 신호 — 네이티브 추천, 버니의 알파, 알림.",
   hideAllTitle: "대기 중인 모든 추천과 알림 숨기기 — 기록에는 보관됨",
   hideAll: "모두 숨기기",
   builderTitle: "24시간 실행되는 액션을 만들고 관리하기",
   builder: "빌더",
   historyTitle: "숨긴 것을 포함해 게시된 모든 액션 보기",
   history: "기록",
-  recommendations: "추천",
+  fromBunnies: "버니로부터",
+  fromBunniesSublabel: "보유한 버니의 알파와 콜",
+  fromBunniesEmpty:
+    "아직 신호 없음 — 키를 보유한 버니의 알파가 여기에 표시됩니다.",
+  fromBunniesDisconnected:
+    "버니 거래소에서 지갑을 연결하면 버니를 팔로우하고 알파를 여기서 볼 수 있습니다.",
+  fromBunniesConnectCta: "버니 거래소로 이동",
+  recommendations: "네이티브",
   recommendationsSublabel: "실행할 수 있는 제안된 동작",
   recommendationsEmpty:
     "아직 처리할 항목이 없습니다 — 액션이 원클릭 추천을 여기에 표시합니다.",
@@ -27,4 +36,6 @@ export default {
   executeLabel: "실행:",
   executeInstructionsTitle: "채팅에 실행 지침 채우기",
   execute: "실행",
+  dismiss: "닫기",
+  dismissTitle: "받은편지함에서 이 추천 제거",
 } as const;

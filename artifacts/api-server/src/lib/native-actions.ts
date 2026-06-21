@@ -13,7 +13,6 @@
 // and a null allowlist avoids brittle exact tool-name matching across protocol
 // toggles.
 
-const H1 = 60 * 60_000;
 const H6 = 6 * 60 * 60_000;
 const D1 = 24 * 60 * 60_000;
 
@@ -26,35 +25,34 @@ export interface NativeActionDef {
   intervalMs: number;
   instructions: string;
   toolAllowlist: string[] | null;
+  // Whether this action is enabled the first time it is seeded for a user.
+  // Defaults to true when omitted. Discovery/trade-suggesting actions ship off
+  // so nothing runs against a wallet until the user opts in; the read-only
+  // daily summary ships on. Re-seeds never touch a user's existing toggle.
+  enabledByDefault?: boolean;
 }
 
-// The complete built-in action set. Keep this list small and focused: the four
+// The complete built-in action set. Keep this list small and focused: the three
 // jobs a user actually wants out of the box — find yields, find trending tokens
-// to buy on base, fund the wallet when it is empty, and a daily summary.
+// to buy on base, and a daily summary.
 export const NATIVE_ACTIONS: NativeActionDef[] = [
   {
     key: "find-yields",
     name: "yield finder",
-    intervalMs: H6,
+    intervalMs: D1,
     toolAllowlist: null,
+    enabledByDefault: false,
     instructions:
-      "compare my best current base position apy (from moralis wallet defi positions) against the top usdc yields on base from defi llama. if a base option's apy beats my current best by more than 1.5 percentage points, emit a SEPARATE recommendation for each such opportunity — one pool per recommendation — naming source and target and citing both apys. if i am holding idle (unlent) stablecoins worth more than 5% of my total wallet value, also recommend the single best risk-adjusted base supply market for them.",
+      "compare my best current base position apy (from my wallet's defi positions via coinstats) against the top usdc yields on base from defi llama. if a base option's apy beats my current best by more than 1.5 percentage points, emit a SEPARATE recommendation for each such opportunity — one pool per recommendation — naming source and target and citing both apys. if i am holding idle (unlent) stablecoins worth more than 5% of my total wallet value, also recommend the single best risk-adjusted base supply market for them.",
   },
   {
     key: "trending-buys",
     name: "trending tokens",
-    intervalMs: H1,
-    toolAllowlist: null,
-    instructions:
-      "pull trending tokens on base via moralis. pick the strongest candidates worth considering as buys and emit a SEPARATE recommendation for each token — never combine multiple tokens into one recommendation — citing 24h volume and 24h price change. prefer tokens with healthy depth (liquidity at least 10% of 24h volume) and skip any where the top holder owns more than 30% of supply or the token looks unverified. top 3 at most.",
-  },
-  {
-    key: "fund-wallet",
-    name: "fund wallet",
     intervalMs: H6,
     toolAllowlist: null,
+    enabledByDefault: false,
     instructions:
-      "check my moralis wallet balances (native eth and tokens). if the wallet is empty — no eth for gas and effectively no token value — post a warn alert telling me to fund the wallet (buy or transfer assets onto base) before bunnyOS can do anything useful. if i hold assets but my eth for gas has run down to near zero, post an info alert to top up a little eth for gas. stop silently if the wallet is funded.",
+      "pull trending tokens on base via coingecko onchain. pick the strongest candidates worth considering as buys and emit a SEPARATE recommendation for each token — never combine multiple tokens into one recommendation — citing 24h volume and 24h price change. prefer tokens with healthy depth (liquidity at least 10% of 24h volume) and skip any where the token looks unverified or has thin liquidity. top 3 at most.",
   },
   {
     key: "daily-summary",
@@ -62,6 +60,6 @@ export const NATIVE_ACTIONS: NativeActionDef[] = [
     intervalMs: D1,
     toolAllowlist: null,
     instructions:
-      "once a day, pull my moralis wallet defi summary and profitability summary and post a single info alert summarizing total deployed value, weighted apy, unclaimed rewards, and net pnl with my best and worst position. info only — do not emit recommendations.",
+      "once a day, pull my wallet portfolio (base mcp get_portfolio) and defi positions + pnl (coinstats) and post a single info alert summarizing total deployed value, weighted apy, unclaimed rewards, and net pnl with my best and worst position. info only — do not emit recommendations.",
   },
 ];

@@ -18,6 +18,7 @@ export default {
   hoursAgo: "{n} 小时前",
   daysAgo: "{n} 天前",
   actionsBuilderTitle: "操作构建器",
+  subtitle: "创建并管理 24/7 运行的操作。",
   builderIntro:
     "每个操作都是按计划运行的限定范围智能体。描述你希望它监控什么、可调用哪些工具，它就会向你的收件箱推送告警和一键建议。",
   pickActionBefore: "在左侧选择一个操作进行编辑，或点击",

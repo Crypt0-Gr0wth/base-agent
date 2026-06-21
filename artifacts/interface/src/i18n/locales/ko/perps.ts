@@ -43,6 +43,10 @@ export default {
   spread: "스프레드",
   noMarkets: "사용 가능한 마켓 없음",
 
+  prepInChat: "채팅에서 준비",
+  prepCommand:
+    "{pair} 퍼프 트레이드 준비를 해줘: 실시간 가격, 미결제약정(롱 대 숏), 펀딩과 스프레드를 읽고 방향성 바이어스, 주요 레벨, 리스크를 정리해줘.",
+
   taReport: "기술적 분석",
   taGenerating: "기술적 분석 실행 중…",
   taWriting: "작성 중…",

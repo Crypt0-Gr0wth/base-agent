@@ -316,6 +316,247 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiKeyStatus"
+  /settings/gmgn-key:
+    get:
+      operationId: getGmgnKeyStatus
+      tags: [models]
+      summary: Get the GMGN API key configuration status
+      responses:
+        "200":
+          description: GMGN key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    post:
+      operationId: setGmgnKey
+      tags: [models]
+      summary: Set the GMGN API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    delete:
+      operationId: clearGmgnKey
+      tags: [models]
+      summary: Clear the user-provided GMGN API key
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+  /settings/zerion-key:
+    get:
+      operationId: getZerionKeyStatus
+      tags: [models]
+      summary: Get the Zerion API key configuration status
+      responses:
+        "200":
+          description: Zerion key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    post:
+      operationId: setZerionKey
+      tags: [models]
+      summary: Set the Zerion API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    delete:
+      operationId: clearZerionKey
+      tags: [models]
+      summary: Clear the user-provided Zerion API key
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+  /settings/surplus-key:
+    get:
+      operationId: getSurplusKeyStatus
+      tags: [models]
+      summary: Get the Surplus Intelligence API key configuration status
+      responses:
+        "200":
+          description: Surplus key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    post:
+      operationId: setSurplusKey
+      tags: [models]
+      summary: Set the Surplus Intelligence API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    delete:
+      operationId: clearSurplusKey
+      tags: [models]
+      summary: Clear the user-provided Surplus Intelligence API key
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+  /settings/venice-key:
+    get:
+      operationId: getVeniceKeyStatus
+      tags: [models]
+      summary: Get the Venice API key configuration status
+      responses:
+        "200":
+          description: Venice key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    post:
+      operationId: setVeniceKey
+      tags: [models]
+      summary: Set the Venice API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    delete:
+      operationId: clearVeniceKey
+      tags: [models]
+      summary: Clear the user-provided Venice API key
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+  /settings/economyos-key:
+    get:
+      operationId: getEconomyosKeyStatus
+      tags: [models]
+      summary: Get the EconomyOS API key configuration status
+      responses:
+        "200":
+          description: EconomyOS key status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    post:
+      operationId: setEconomyosKey
+      tags: [models]
+      summary: Set the EconomyOS API key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyInput"
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+    delete:
+      operationId: clearEconomyosKey
+      tags: [models]
+      summary: Clear the user-provided EconomyOS API key
+      responses:
+        "200":
+          description: New status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiKeyStatus"
+  /settings/llm-provider:
+    get:
+      operationId: getLlmProvider
+      tags: [models]
+      summary: Get the active LLM inference provider
+      responses:
+        "200":
+          description: Active provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmProviderState"
+    post:
+      operationId: setLlmProvider
+      tags: [models]
+      summary: Set the active LLM inference provider
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LlmProviderState"
+      responses:
+        "200":
+          description: New active provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmProviderState"
+  /settings/llm-providers:
+    get:
+      operationId: listLlmProviders
+      tags: [models]
+      summary: List available LLM inference providers
+      responses:
+        "200":
+          description: Available providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LlmProviderListResponse"
   /base-mcp/call:
     post:
       operationId: callBaseMcpTool
@@ -492,6 +733,33 @@ components:
         model:
           type: string
           minLength: 1
+    LlmProviderState:
+      type: object
+      required: [provider]
+      properties:
+        provider:
+          type: string
+          minLength: 1
+          description: >-
+            Provider id from the registry (e.g. surplus, venice, economyos, openrouter). Validated
+            server-side against the available providers, so new providers work
+            with no schema change.
+    LlmProviderInfo:
+      type: object
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+    LlmProviderListResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/LlmProviderInfo"
     BaseMcpStatus:
       type: object
       required: [connected, toolCount, tools]

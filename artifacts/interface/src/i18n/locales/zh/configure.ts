@@ -4,10 +4,16 @@ export default {
   tabLlm: "LLM",
   tabServices: "服务",
   tabMemory: "记忆",
-  keysIntroPrefix: "下方两个密钥是",
-  keysIntroRequired: "必需的",
-  keysIntroSuffix: "，bunnyOS 才能运行。它们解锁模型与代理推理所依赖的链上数据。",
+  bunnyDsManaged: "由 bunnyDS 托管。关闭后可使用自己的密钥",
+  keysIntroPrefix: "此标签页面向开源 / 自带密钥的用户。",
+  keysIntroRequired: "管理 bunnyDS",
+  keysIntroSuffix:
+    "，在其专属页面改用 bunnyOS 托管数据 + 推理网关。",
   requiredMark: "*必填",
+  llmGroupLabel: "推理提供方",
+  llmGroupHint: "二选一",
+  orDivider: "或",
+  useProvider: "使用",
   openrouterKeyLabel: "OpenRouter API 密钥",
   topUp: "充值 $1",
   getFreeKey: "获取免费密钥",
@@ -23,6 +29,26 @@ export default {
   coingeckoKeyLabel: "CoinGecko API 密钥",
   coingeckoHelp:
     "bunnyOS 需要它来获取代币价格、市场数据与发现功能。免费 Demo 套餐（无需信用卡）——约 30 次/分钟、1 万次/月。所有调用均需要，包括链上 dex 查询。",
+  gmgnKeyLabel: "GMGN API 密钥",
+  gmgnHelp:
+    "可选。解锁只读的 meme/degen 情报——热门、Trenches 新发现、代币安全、聪明钱与 KOL 动向、钱包盈亏。在 gmgn.ai 获取免费密钥，然后在服务标签页启用 GMGN。仅只读，不含交易。",
+  zerionKeyLabel: "Zerion API 密钥",
+  zerionHelp:
+    "可选。Base 上只读的钱包/投资组合数据——投资组合概览、持仓、盈亏、交易记录、NFT。是 Moralis 在仪表盘场景下更便宜的替代方案。在 developers.zerion.io 获取密钥，然后在服务标签页启用 Zerion。仅只读。",
+  surplusKeyLabel: "Surplus Intelligence API 密钥",
+  surplusHelp:
+    "OpenRouter 的可选替代。粘贴你从 surplusintelligence.ai 获取的买家密钥（inf_...），然后在 LLM 标签页选择 Surplus 作为提供方。",
+  veniceKeyLabel: "Venice API 密钥",
+  veniceHelp:
+    "构建于 Base 的注重隐私、无审查推理。粘贴你从 venice.ai/settings/api 获取的密钥（vk_...），然后在 LLM 标签页选择 Venice 作为提供方。请选择支持工具调用的模型。",
+  economyosKeyLabel: "EconomyOS API 密钥",
+  economyosHelp:
+    "Virtuals 算力推理。粘贴你从 compute.virtuals.io 获取的 Virtuals API 密钥，然后在 LLM 标签页选择 EconomyOS 作为提供方。请选择支持工具调用的模型（例如 deepseek-v4-flash）。",
+  providerLabel: "推理提供方",
+  providerOpenrouter: "OpenRouter",
+  providerSurplus: "Surplus Intelligence",
+  providerVenice: "Venice",
+  providerEconomyos: "economyos (Virtuals 协议)",
   modelLabel: "模型",
   selectModel: "选择模型",
   searchModels: "搜索模型...",

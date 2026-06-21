@@ -3,7 +3,8 @@ import { useT } from "@/i18n";
 export function Footer() {
   const t = useT();
   return (
-    <footer className="relative z-10 w-full px-6 py-4 border-t border-border/60 text-xs text-muted-foreground flex items-center justify-between shrink-0 bg-background/70 backdrop-blur">
+    <footer className="relative z-10 w-full px-6 py-4 border-t border-border/60 text-xs text-muted-foreground flex items-center gap-3 shrink-0 bg-background/70 backdrop-blur">
+      <span className="font-mono">{t("footer.version")}</span>
       <a
         href="https://x.com/officialbunnyos"
         target="_blank"
@@ -20,9 +21,6 @@ export function Footer() {
         </svg>
         @officialbunnyos
       </a>
-      <span className="font-mono flex items-center gap-3">
-        <span>{t("footer.version")}</span>
-      </span>
     </footer>
   );
 }

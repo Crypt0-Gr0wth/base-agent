@@ -1,6 +1,16 @@
 export default {
   contractSecurity: "合约安全",
-  viaGoplus: "数据来自 GoPlus",
+  viaCoinstats: "数据来自 CoinStats",
+  holderDistribution: "持有者分布",
+  viaGmgn: "数据来自 GMGN",
+
+  pasteAddressPlaceholder: "粘贴 base 代币合约地址（0x…）进行研究",
+  researchAddress: "研究",
+  invalidAddress: "请输入有效的 base 地址（0x + 40 位十六进制）。",
+  tokenNotFound: "在 base 上找不到该代币。",
+  searchPlaceholder: "按名称、代号或合约地址搜索",
+  searchAction: "搜索",
+  noSearchResults: "在 base 上没有匹配该搜索的代币。",
 
   rateLimitReached: "已达速率限制 — 稍等片刻再生成更多报告。",
   reportEndedEarly: "报告中断 — 连接在完成前断开。请重试。",
@@ -27,11 +37,12 @@ export default {
   couldntLoadReport: "无法加载该代币的报告",
   notBaseTokenOrUnavailable: "它可能不是 Base 代币，或数据暂不可用。",
 
-  methodologyMoralisTitle: "热门代币",
-  methodologyMoralisSource: "Moralis 热门代币 API（链：base）。",
-  methodologyMoralisFilters: "呈现近期有热度的代币。列表缓存约 1 小时。",
-  methodologyMoralisMarket:
-    "价格、市值、流动性与涨跌幅来自 Moralis。交易量为该代币在所有池子的 24h 链上（DEX）总量 — 不含 CEX 交易。",
+  methodologyCoingeckoTitle: "热门代币",
+  methodologyCoingeckoSource:
+    "CoinGecko 链上热门池子（网络：base），映射到每个池子的基础代币。",
+  methodologyCoingeckoFilters: "呈现当前最热门的 Base 池子。列表缓存约 1 小时。",
+  methodologyCoingeckoMarket:
+    "价格、市值、流动性与涨跌幅来自 CoinGecko 的链上热门池子。交易量为该代币在所有池子的 24h 链上（DEX）总量 — 不含 CEX 交易。",
 
   methodologyVirtualsTitle: "已毕业的 AI 智能体代币",
   methodologyVirtualsSource:
@@ -55,7 +66,7 @@ export default {
 
   subtitleBankr: "近期发行（来自 bankr）— 点击代币获取最新 AI 报告",
   subtitleVirtuals: "AI 智能体代币（来自 virtuals）— 点击代币获取最新 AI 报告",
-  subtitleMoralis: "热门趋势（来自 moralis）— 点击代币获取最新 AI 报告",
+  subtitleCoingecko: "热门趋势（来自 coingecko 链上）— 点击代币获取最新 AI 报告",
 
   refresh: "刷新",
 
@@ -90,4 +101,8 @@ export default {
   colAge: "年龄",
 
   buyCommand: "买入 1 USDC 的 {address}",
+
+  researchHint: "点击任意代币可预览图表，并在智能体对话中进行研究",
+  researchCommand: "研究这个代币：{symbol}（{address}）",
+  researchCommandNoSymbol: "研究这个代币：{address}",
 } as const;

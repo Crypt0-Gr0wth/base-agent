@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
 export type Tab = {
   id: string;
@@ -12,21 +12,18 @@ export type Tab = {
     | "home"
     | "protocol"
     | "settings"
-    | "actions"
     | "chat"
-    | "wallet"
-    | "actions-builder"
-    | "actions-history"
+    | "actions-inbox"
     | "tokens"
-    | "perps";
+    | "perps"
+    | "bunny"
+    | "bunnyds";
   payload?: { protocolId: string };
   // false → no close button in TabBar and closeTab is a no-op.
   // Defaults to true for backward compatibility; `home` is always non-closable
   // regardless (legacy hard-coded behavior in closeTab).
   closable?: boolean;
-  // true → not rendered in TabBar. Used to keep the `home` tab in state on
-  // mobile (so legacy callers still work) without showing it alongside the
-  // explicit wallet/actions/chat tabs.
+  // true → not rendered in TabBar while kept in state.
   hidden?: boolean;
 };
 
@@ -35,13 +32,7 @@ type TabsContextValue = {
   activeId: string;
   openTab: (tab: Tab) => void;
   closeTab: (id: string) => void;
-  // Force-remove a tab regardless of its `closable` flag. Used for
-  // viewport-driven cleanup (e.g. tearing down the mobile-only wallet /
-  // actions / chat tabs when we widen back to desktop) where the tabs
-  // were intentionally non-closable for the user but still need to go.
-  removeTab: (id: string) => void;
   setActive: (id: string) => void;
-  setHidden: (id: string, hidden: boolean) => void;
   // Reorder by dragging: move `fromId` so it lands immediately before
   // `toId`. No-op if either id is missing or they're already adjacent
   // in the requested direction.
@@ -65,18 +56,11 @@ const SETTINGS_TAB: Tab = {
   kind: "settings",
   closable: false,
 };
-const ACTIONS_BUILDER_TAB: Tab = {
-  id: "actions-builder",
-  title: "actions builder",
-  titleKey: "tabs.actionsBuilder",
-  kind: "actions-builder",
-  closable: false,
-};
-const ACTIONS_HISTORY_TAB: Tab = {
-  id: "actions-history",
-  title: "actions history",
-  titleKey: "tabs.actionsHistory",
-  kind: "actions-history",
+const ACTION_INBOX_TAB: Tab = {
+  id: "actions-inbox",
+  title: "action inbox",
+  titleKey: "tabs.actionInbox",
+  kind: "actions-inbox",
   closable: false,
 };
 const TOKENS_TAB: Tab = {
@@ -93,31 +77,53 @@ const PERPS_TAB: Tab = {
   kind: "perps",
   closable: false,
 };
-// Base MCP is the wallet — always-on and seeded on every terminal mount so
-// the user lands with their wallet tab already available. Closable so the
-// user can dismiss it if the bar gets crowded; re-opens on next sign-in.
-const BASE_MCP_TAB: Tab = {
-  id: "protocol:base",
-  title: "base mcp",
-  titleKey: "tabs.baseMcp",
-  kind: "protocol",
-  payload: { protocolId: "base" },
-  closable: true,
+const BUNNY_TAB: Tab = {
+  id: "bunny",
+  title: "bunnyEX",
+  titleKey: "tabs.bunny",
+  kind: "bunny",
+  closable: false,
 };
-
+const BUNNYDS_TAB: Tab = {
+  id: "bunnyds",
+  title: "bunnyDS",
+  titleKey: "tabs.bunnyds",
+  kind: "bunnyds",
+  closable: false,
+};
 const TabsContext = createContext<TabsContextValue | null>(null);
 
 export function TabsProvider({ children }: { children: ReactNode }) {
   const [tabs, setTabs] = useState<Tab[]>([
     HOME_TAB,
-    ACTIONS_BUILDER_TAB,
-    ACTIONS_HISTORY_TAB,
+    ACTION_INBOX_TAB,
     TOKENS_TAB,
-    PERPS_TAB,
+    BUNNY_TAB,
+    BUNNYDS_TAB,
     SETTINGS_TAB,
-    BASE_MCP_TAB,
   ]);
-  const [activeId, setActiveId] = useState<string>("home");
+  // First-time sign-ups arrive at /terminal?welcome=1 (set by the OAuth opener
+  // for brand-new users). Land them on the bunnyDS tab instead of home, then
+  // strip the flag so a later refresh doesn't re-trigger it.
+  const [activeId, setActiveId] = useState<string>(() => {
+    if (typeof window === "undefined") return "home";
+    return new URLSearchParams(window.location.search).has("welcome")
+      ? "bunnyds"
+      : "home";
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("welcome")) return;
+    params.delete("welcome");
+    const qs = params.toString();
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${qs ? `?${qs}` : ""}`,
+    );
+  }, []);
 
   const openTab = useCallback((tab: Tab) => {
     setTabs((prev) => (prev.some((t) => t.id === tab.id) ? prev : [...prev, tab]));
@@ -134,21 +140,6 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       setActiveId((curr) => {
         if (curr !== id) return curr;
         const neighbor = prev[idx + 1] ?? prev[idx - 1] ?? HOME_TAB;
-        return neighbor.id;
-      });
-      return next;
-    });
-  }, []);
-
-  const removeTab = useCallback((id: string) => {
-    if (id === "home") return;
-    setTabs((prev) => {
-      const idx = prev.findIndex((t) => t.id === id);
-      if (idx < 0) return prev;
-      const next = prev.filter((t) => t.id !== id);
-      setActiveId((curr) => {
-        if (curr !== id) return curr;
-        const neighbor = next[idx] ?? next[idx - 1] ?? HOME_TAB;
         return neighbor.id;
       });
       return next;
@@ -196,21 +187,13 @@ export function TabsProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const setHidden = useCallback((id: string, hidden: boolean) => {
-    setTabs((prev) =>
-      prev.map((t) => (t.id === id && !!t.hidden !== hidden ? { ...t, hidden } : t)),
-    );
-  }, []);
-
   const value = useMemo(
     () => ({
       tabs,
       activeId,
       openTab,
       closeTab,
-      removeTab,
       setActive,
-      setHidden,
       moveTab,
       reorderVisible,
     }),
@@ -219,9 +202,7 @@ export function TabsProvider({ children }: { children: ReactNode }) {
       activeId,
       openTab,
       closeTab,
-      removeTab,
       setActive,
-      setHidden,
       moveTab,
       reorderVisible,
     ],

@@ -1,5 +1,6 @@
 import { getMoralisApiKey } from "./settings";
 import { logger } from "./logger";
+import { toonifyJson } from "./toon";
 
 const BASE_URL = "https://deep-index.moralis.io/api/v2.2";
 const DEFAULT_CHAIN = "base";
@@ -215,6 +216,8 @@ export function findMoralisTool(name: string): boolean {
 
 export function moralisStatus(): { connected: boolean; toolCount: number } {
   return {
+    // Moralis is NOT on the bunnyDS gateway path — it always needs the user's
+    // own key. Connected only when a Moralis key is configured.
     connected: Boolean(getMoralisApiKey()),
     toolCount: TOOLS.length,
   };
@@ -247,11 +250,12 @@ export async function callMoralisTool(
     return { isError: true, content: `Unknown Moralis tool: ${name}` };
   }
   const apiKey = getMoralisApiKey();
+  // Moralis is not on the bunnyDS gateway path — always use the user's key.
   if (!apiKey) {
     return {
       isError: true,
       content:
-        "Moralis API key is not configured. Set one in Configure → llm tab, or set MORALIS_API_KEY env var.",
+        "Moralis API key is not configured. Add a Moralis key in Configure → api tab.",
     };
   }
   let url: string;
@@ -262,10 +266,12 @@ export async function callMoralisTool(
     const message = err instanceof Error ? err.message : String(err);
     return { isError: true, content: `Failed to build Moralis request: ${message}` };
   }
+  const headers: Record<string, string> = {
+    "X-API-Key": apiKey,
+    accept: "application/json",
+  };
   try {
-    const resp = await fetch(url, {
-      headers: { "X-API-Key": apiKey, accept: "application/json" },
-    });
+    const resp = await fetch(url, { headers });
     const text = await resp.text();
     if (!resp.ok) {
       logger.warn(
@@ -277,7 +283,7 @@ export async function callMoralisTool(
         content: `Moralis ${resp.status}: ${text.slice(0, 1000)}`,
       };
     }
-    return { isError: false, content: text };
+    return { isError: false, content: toonifyJson(text) };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.warn({ tool: name, err }, "Moralis fetch failed");

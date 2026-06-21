@@ -4,11 +4,16 @@ export default {
   tabLlm: "llm",
   tabServices: "services",
   tabMemory: "memory",
-  keysIntroPrefix: "both keys below are",
-  keysIntroRequired: "required",
+  bunnyDsManaged: "managed by bunnyDS. turn it off to bring your own keys",
+  keysIntroPrefix: "this tab is for open-source / bring-your-own-key setups.",
+  keysIntroRequired: "manage bunnyDS",
   keysIntroSuffix:
-    "for bunnyOS to work. they unlock the model and the on-chain data the agent reasons over.",
+    " on its own page to use the bunnyOS managed data + inference gateway instead.",
   requiredMark: "*required",
+  llmGroupLabel: "inference provider",
+  llmGroupHint: "pick one",
+  orDivider: "or",
+  useProvider: "use",
   openrouterKeyLabel: "openrouter api key",
   topUp: "top up $1",
   getFreeKey: "get free key",
@@ -24,6 +29,26 @@ export default {
   coingeckoKeyLabel: "coingecko api key",
   coingeckoHelp:
     "bunnyOS needs this for token pricing, market data, and discovery. free Demo tier (no card) — ~30 req/min, 10k req/month. required for all calls, including onchain dex lookups.",
+  gmgnKeyLabel: "gmgn api key",
+  gmgnHelp:
+    "optional. unlocks read-only meme/degen intel — trending, trenches, token security, smart-money + kol activity, wallet p&l. grab a free key at gmgn.ai, then enable gmgn in the services tab. read-only only, no trading.",
+  zerionKeyLabel: "zerion api key",
+  zerionHelp:
+    "optional. read-only wallet/portfolio data on base — portfolio overview, positions, pnl, transactions, nfts. a cheaper alternative to moralis for the dashboard. grab a key at developers.zerion.io, then enable zerion in the services tab. read-only only.",
+  surplusKeyLabel: "surplus intelligence api key",
+  surplusHelp:
+    "optional alternative to openrouter. paste your buyer key (inf_...) from surplusintelligence.ai, then pick surplus as the provider in the llm tab.",
+  veniceKeyLabel: "venice api key",
+  veniceHelp:
+    "privacy-first, uncensored inference on base. paste your key (vk_...) from venice.ai/settings/api, then pick venice as the provider in the llm tab. choose a model that supports tool calling.",
+  economyosKeyLabel: "economyos api key",
+  economyosHelp:
+    "virtuals compute inference. paste your virtuals api key from compute.virtuals.io, then pick economyos as the provider in the llm tab. choose a model that supports tool calling (e.g. deepseek-v4-flash).",
+  providerLabel: "inference provider",
+  providerOpenrouter: "openrouter",
+  providerSurplus: "surplus intelligence",
+  providerVenice: "venice",
+  providerEconomyos: "economyos (virtuals protocol)",
   modelLabel: "model",
   selectModel: "select model",
   searchModels: "search models...",

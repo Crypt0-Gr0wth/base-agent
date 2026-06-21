@@ -33,6 +33,8 @@ import type {
   DeleteChat200,
   HealthStatus,
   LlmModel,
+  LlmProviderListResponse,
+  LlmProviderState,
   McpCallBody,
   McpCallResult,
   MemoryFile,
@@ -1592,6 +1594,1321 @@ export const useClearCoingeckoKey = <TError = ErrorType<unknown>,
       > => {
       return useMutation(getClearCoingeckoKeyMutationOptions(options));
     }
+
+export const getGetGmgnKeyStatusUrl = () => {
+
+
+
+
+  return `/api/settings/gmgn-key`
+}
+
+/**
+ * @summary Get the GMGN API key configuration status
+ */
+export const getGmgnKeyStatus = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getGetGmgnKeyStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetGmgnKeyStatusQueryKey = () => {
+    return [
+    `/api/settings/gmgn-key`
+    ] as const;
+    }
+
+
+export const getGetGmgnKeyStatusQueryOptions = <TData = Awaited<ReturnType<typeof getGmgnKeyStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGmgnKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetGmgnKeyStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getGmgnKeyStatus>>> = ({ signal }) => getGmgnKeyStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getGmgnKeyStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetGmgnKeyStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getGmgnKeyStatus>>>
+export type GetGmgnKeyStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the GMGN API key configuration status
+ */
+
+export function useGetGmgnKeyStatus<TData = Awaited<ReturnType<typeof getGmgnKeyStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getGmgnKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetGmgnKeyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetGmgnKeyUrl = () => {
+
+
+
+
+  return `/api/settings/gmgn-key`
+}
+
+/**
+ * @summary Set the GMGN API key
+ */
+export const setGmgnKey = async (apiKeyInput: ApiKeyInput, options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getSetGmgnKeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      apiKeyInput,)
+  }
+);}
+
+
+
+
+export const getSetGmgnKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setGmgnKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setGmgnKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext> => {
+
+const mutationKey = ['setGmgnKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setGmgnKey>>, {data: BodyType<ApiKeyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setGmgnKey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetGmgnKeyMutationResult = NonNullable<Awaited<ReturnType<typeof setGmgnKey>>>
+    export type SetGmgnKeyMutationBody = BodyType<ApiKeyInput>
+    export type SetGmgnKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the GMGN API key
+ */
+export const useSetGmgnKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setGmgnKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setGmgnKey>>,
+        TError,
+        {data: BodyType<ApiKeyInput>},
+        TContext
+      > => {
+      return useMutation(getSetGmgnKeyMutationOptions(options));
+    }
+
+export const getClearGmgnKeyUrl = () => {
+
+
+
+
+  return `/api/settings/gmgn-key`
+}
+
+/**
+ * @summary Clear the user-provided GMGN API key
+ */
+export const clearGmgnKey = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getClearGmgnKeyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearGmgnKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearGmgnKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearGmgnKey>>, TError,void, TContext> => {
+
+const mutationKey = ['clearGmgnKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearGmgnKey>>, void> = () => {
+
+
+          return  clearGmgnKey(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearGmgnKeyMutationResult = NonNullable<Awaited<ReturnType<typeof clearGmgnKey>>>
+
+    export type ClearGmgnKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the user-provided GMGN API key
+ */
+export const useClearGmgnKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearGmgnKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearGmgnKey>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearGmgnKeyMutationOptions(options));
+    }
+
+export const getGetZerionKeyStatusUrl = () => {
+
+
+
+
+  return `/api/settings/zerion-key`
+}
+
+/**
+ * @summary Get the Zerion API key configuration status
+ */
+export const getZerionKeyStatus = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getGetZerionKeyStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetZerionKeyStatusQueryKey = () => {
+    return [
+    `/api/settings/zerion-key`
+    ] as const;
+    }
+
+
+export const getGetZerionKeyStatusQueryOptions = <TData = Awaited<ReturnType<typeof getZerionKeyStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getZerionKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetZerionKeyStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getZerionKeyStatus>>> = ({ signal }) => getZerionKeyStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getZerionKeyStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetZerionKeyStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getZerionKeyStatus>>>
+export type GetZerionKeyStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the Zerion API key configuration status
+ */
+
+export function useGetZerionKeyStatus<TData = Awaited<ReturnType<typeof getZerionKeyStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getZerionKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetZerionKeyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetZerionKeyUrl = () => {
+
+
+
+
+  return `/api/settings/zerion-key`
+}
+
+/**
+ * @summary Set the Zerion API key
+ */
+export const setZerionKey = async (apiKeyInput: ApiKeyInput, options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getSetZerionKeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      apiKeyInput,)
+  }
+);}
+
+
+
+
+export const getSetZerionKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setZerionKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setZerionKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext> => {
+
+const mutationKey = ['setZerionKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setZerionKey>>, {data: BodyType<ApiKeyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setZerionKey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetZerionKeyMutationResult = NonNullable<Awaited<ReturnType<typeof setZerionKey>>>
+    export type SetZerionKeyMutationBody = BodyType<ApiKeyInput>
+    export type SetZerionKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the Zerion API key
+ */
+export const useSetZerionKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setZerionKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setZerionKey>>,
+        TError,
+        {data: BodyType<ApiKeyInput>},
+        TContext
+      > => {
+      return useMutation(getSetZerionKeyMutationOptions(options));
+    }
+
+export const getClearZerionKeyUrl = () => {
+
+
+
+
+  return `/api/settings/zerion-key`
+}
+
+/**
+ * @summary Clear the user-provided Zerion API key
+ */
+export const clearZerionKey = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getClearZerionKeyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearZerionKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearZerionKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearZerionKey>>, TError,void, TContext> => {
+
+const mutationKey = ['clearZerionKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearZerionKey>>, void> = () => {
+
+
+          return  clearZerionKey(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearZerionKeyMutationResult = NonNullable<Awaited<ReturnType<typeof clearZerionKey>>>
+
+    export type ClearZerionKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the user-provided Zerion API key
+ */
+export const useClearZerionKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearZerionKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearZerionKey>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearZerionKeyMutationOptions(options));
+    }
+
+export const getGetSurplusKeyStatusUrl = () => {
+
+
+
+
+  return `/api/settings/surplus-key`
+}
+
+/**
+ * @summary Get the Surplus Intelligence API key configuration status
+ */
+export const getSurplusKeyStatus = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getGetSurplusKeyStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetSurplusKeyStatusQueryKey = () => {
+    return [
+    `/api/settings/surplus-key`
+    ] as const;
+    }
+
+
+export const getGetSurplusKeyStatusQueryOptions = <TData = Awaited<ReturnType<typeof getSurplusKeyStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSurplusKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetSurplusKeyStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getSurplusKeyStatus>>> = ({ signal }) => getSurplusKeyStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getSurplusKeyStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetSurplusKeyStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getSurplusKeyStatus>>>
+export type GetSurplusKeyStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the Surplus Intelligence API key configuration status
+ */
+
+export function useGetSurplusKeyStatus<TData = Awaited<ReturnType<typeof getSurplusKeyStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getSurplusKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetSurplusKeyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetSurplusKeyUrl = () => {
+
+
+
+
+  return `/api/settings/surplus-key`
+}
+
+/**
+ * @summary Set the Surplus Intelligence API key
+ */
+export const setSurplusKey = async (apiKeyInput: ApiKeyInput, options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getSetSurplusKeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      apiKeyInput,)
+  }
+);}
+
+
+
+
+export const getSetSurplusKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setSurplusKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setSurplusKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext> => {
+
+const mutationKey = ['setSurplusKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setSurplusKey>>, {data: BodyType<ApiKeyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setSurplusKey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetSurplusKeyMutationResult = NonNullable<Awaited<ReturnType<typeof setSurplusKey>>>
+    export type SetSurplusKeyMutationBody = BodyType<ApiKeyInput>
+    export type SetSurplusKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the Surplus Intelligence API key
+ */
+export const useSetSurplusKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setSurplusKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setSurplusKey>>,
+        TError,
+        {data: BodyType<ApiKeyInput>},
+        TContext
+      > => {
+      return useMutation(getSetSurplusKeyMutationOptions(options));
+    }
+
+export const getClearSurplusKeyUrl = () => {
+
+
+
+
+  return `/api/settings/surplus-key`
+}
+
+/**
+ * @summary Clear the user-provided Surplus Intelligence API key
+ */
+export const clearSurplusKey = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getClearSurplusKeyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearSurplusKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearSurplusKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearSurplusKey>>, TError,void, TContext> => {
+
+const mutationKey = ['clearSurplusKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearSurplusKey>>, void> = () => {
+
+
+          return  clearSurplusKey(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearSurplusKeyMutationResult = NonNullable<Awaited<ReturnType<typeof clearSurplusKey>>>
+
+    export type ClearSurplusKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the user-provided Surplus Intelligence API key
+ */
+export const useClearSurplusKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearSurplusKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearSurplusKey>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearSurplusKeyMutationOptions(options));
+    }
+
+export const getGetVeniceKeyStatusUrl = () => {
+
+
+
+
+  return `/api/settings/venice-key`
+}
+
+/**
+ * @summary Get the Venice API key configuration status
+ */
+export const getVeniceKeyStatus = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getGetVeniceKeyStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetVeniceKeyStatusQueryKey = () => {
+    return [
+    `/api/settings/venice-key`
+    ] as const;
+    }
+
+
+export const getGetVeniceKeyStatusQueryOptions = <TData = Awaited<ReturnType<typeof getVeniceKeyStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getVeniceKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetVeniceKeyStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getVeniceKeyStatus>>> = ({ signal }) => getVeniceKeyStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getVeniceKeyStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetVeniceKeyStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getVeniceKeyStatus>>>
+export type GetVeniceKeyStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the Venice API key configuration status
+ */
+
+export function useGetVeniceKeyStatus<TData = Awaited<ReturnType<typeof getVeniceKeyStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getVeniceKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetVeniceKeyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetVeniceKeyUrl = () => {
+
+
+
+
+  return `/api/settings/venice-key`
+}
+
+/**
+ * @summary Set the Venice API key
+ */
+export const setVeniceKey = async (apiKeyInput: ApiKeyInput, options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getSetVeniceKeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      apiKeyInput,)
+  }
+);}
+
+
+
+
+export const getSetVeniceKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setVeniceKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setVeniceKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext> => {
+
+const mutationKey = ['setVeniceKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setVeniceKey>>, {data: BodyType<ApiKeyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setVeniceKey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetVeniceKeyMutationResult = NonNullable<Awaited<ReturnType<typeof setVeniceKey>>>
+    export type SetVeniceKeyMutationBody = BodyType<ApiKeyInput>
+    export type SetVeniceKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the Venice API key
+ */
+export const useSetVeniceKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setVeniceKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setVeniceKey>>,
+        TError,
+        {data: BodyType<ApiKeyInput>},
+        TContext
+      > => {
+      return useMutation(getSetVeniceKeyMutationOptions(options));
+    }
+
+export const getClearVeniceKeyUrl = () => {
+
+
+
+
+  return `/api/settings/venice-key`
+}
+
+/**
+ * @summary Clear the user-provided Venice API key
+ */
+export const clearVeniceKey = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getClearVeniceKeyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearVeniceKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearVeniceKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearVeniceKey>>, TError,void, TContext> => {
+
+const mutationKey = ['clearVeniceKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearVeniceKey>>, void> = () => {
+
+
+          return  clearVeniceKey(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearVeniceKeyMutationResult = NonNullable<Awaited<ReturnType<typeof clearVeniceKey>>>
+
+    export type ClearVeniceKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the user-provided Venice API key
+ */
+export const useClearVeniceKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearVeniceKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearVeniceKey>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearVeniceKeyMutationOptions(options));
+    }
+
+export const getGetEconomyosKeyStatusUrl = () => {
+
+
+
+
+  return `/api/settings/economyos-key`
+}
+
+/**
+ * @summary Get the EconomyOS API key configuration status
+ */
+export const getEconomyosKeyStatus = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getGetEconomyosKeyStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEconomyosKeyStatusQueryKey = () => {
+    return [
+    `/api/settings/economyos-key`
+    ] as const;
+    }
+
+
+export const getGetEconomyosKeyStatusQueryOptions = <TData = Awaited<ReturnType<typeof getEconomyosKeyStatus>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEconomyosKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEconomyosKeyStatusQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEconomyosKeyStatus>>> = ({ signal }) => getEconomyosKeyStatus({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEconomyosKeyStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEconomyosKeyStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getEconomyosKeyStatus>>>
+export type GetEconomyosKeyStatusQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the EconomyOS API key configuration status
+ */
+
+export function useGetEconomyosKeyStatus<TData = Awaited<ReturnType<typeof getEconomyosKeyStatus>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEconomyosKeyStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEconomyosKeyStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetEconomyosKeyUrl = () => {
+
+
+
+
+  return `/api/settings/economyos-key`
+}
+
+/**
+ * @summary Set the EconomyOS API key
+ */
+export const setEconomyosKey = async (apiKeyInput: ApiKeyInput, options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getSetEconomyosKeyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      apiKeyInput,)
+  }
+);}
+
+
+
+
+export const getSetEconomyosKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setEconomyosKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setEconomyosKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext> => {
+
+const mutationKey = ['setEconomyosKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setEconomyosKey>>, {data: BodyType<ApiKeyInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setEconomyosKey(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetEconomyosKeyMutationResult = NonNullable<Awaited<ReturnType<typeof setEconomyosKey>>>
+    export type SetEconomyosKeyMutationBody = BodyType<ApiKeyInput>
+    export type SetEconomyosKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the EconomyOS API key
+ */
+export const useSetEconomyosKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setEconomyosKey>>, TError,{data: BodyType<ApiKeyInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setEconomyosKey>>,
+        TError,
+        {data: BodyType<ApiKeyInput>},
+        TContext
+      > => {
+      return useMutation(getSetEconomyosKeyMutationOptions(options));
+    }
+
+export const getClearEconomyosKeyUrl = () => {
+
+
+
+
+  return `/api/settings/economyos-key`
+}
+
+/**
+ * @summary Clear the user-provided EconomyOS API key
+ */
+export const clearEconomyosKey = async ( options?: RequestInit): Promise<ApiKeyStatus> => {
+
+  return customFetch<ApiKeyStatus>(getClearEconomyosKeyUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getClearEconomyosKeyMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearEconomyosKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof clearEconomyosKey>>, TError,void, TContext> => {
+
+const mutationKey = ['clearEconomyosKey'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearEconomyosKey>>, void> = () => {
+
+
+          return  clearEconomyosKey(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearEconomyosKeyMutationResult = NonNullable<Awaited<ReturnType<typeof clearEconomyosKey>>>
+
+    export type ClearEconomyosKeyMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Clear the user-provided EconomyOS API key
+ */
+export const useClearEconomyosKey = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearEconomyosKey>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof clearEconomyosKey>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearEconomyosKeyMutationOptions(options));
+    }
+
+export const getGetLlmProviderUrl = () => {
+
+
+
+
+  return `/api/settings/llm-provider`
+}
+
+/**
+ * @summary Get the active LLM inference provider
+ */
+export const getLlmProvider = async ( options?: RequestInit): Promise<LlmProviderState> => {
+
+  return customFetch<LlmProviderState>(getGetLlmProviderUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetLlmProviderQueryKey = () => {
+    return [
+    `/api/settings/llm-provider`
+    ] as const;
+    }
+
+
+export const getGetLlmProviderQueryOptions = <TData = Awaited<ReturnType<typeof getLlmProvider>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLlmProvider>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetLlmProviderQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLlmProvider>>> = ({ signal }) => getLlmProvider({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getLlmProvider>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetLlmProviderQueryResult = NonNullable<Awaited<ReturnType<typeof getLlmProvider>>>
+export type GetLlmProviderQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the active LLM inference provider
+ */
+
+export function useGetLlmProvider<TData = Awaited<ReturnType<typeof getLlmProvider>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLlmProvider>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetLlmProviderQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
+
+export const getSetLlmProviderUrl = () => {
+
+
+
+
+  return `/api/settings/llm-provider`
+}
+
+/**
+ * @summary Set the active LLM inference provider
+ */
+export const setLlmProvider = async (llmProviderState: LlmProviderState, options?: RequestInit): Promise<LlmProviderState> => {
+
+  return customFetch<LlmProviderState>(getSetLlmProviderUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      llmProviderState,)
+  }
+);}
+
+
+
+
+export const getSetLlmProviderMutationOptions = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLlmProvider>>, TError,{data: BodyType<LlmProviderState>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setLlmProvider>>, TError,{data: BodyType<LlmProviderState>}, TContext> => {
+
+const mutationKey = ['setLlmProvider'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setLlmProvider>>, {data: BodyType<LlmProviderState>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  setLlmProvider(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetLlmProviderMutationResult = NonNullable<Awaited<ReturnType<typeof setLlmProvider>>>
+    export type SetLlmProviderMutationBody = BodyType<LlmProviderState>
+    export type SetLlmProviderMutationError = ErrorType<unknown>
+
+    /**
+ * @summary Set the active LLM inference provider
+ */
+export const useSetLlmProvider = <TError = ErrorType<unknown>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setLlmProvider>>, TError,{data: BodyType<LlmProviderState>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setLlmProvider>>,
+        TError,
+        {data: BodyType<LlmProviderState>},
+        TContext
+      > => {
+      return useMutation(getSetLlmProviderMutationOptions(options));
+    }
+
+export const getListLlmProvidersUrl = () => {
+
+
+
+
+  return `/api/settings/llm-providers`
+}
+
+/**
+ * @summary List available LLM inference providers
+ */
+export const listLlmProviders = async ( options?: RequestInit): Promise<LlmProviderListResponse> => {
+
+  return customFetch<LlmProviderListResponse>(getListLlmProvidersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListLlmProvidersQueryKey = () => {
+    return [
+    `/api/settings/llm-providers`
+    ] as const;
+    }
+
+
+export const getListLlmProvidersQueryOptions = <TData = Awaited<ReturnType<typeof listLlmProviders>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLlmProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListLlmProvidersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLlmProviders>>> = ({ signal }) => listLlmProviders({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listLlmProviders>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListLlmProvidersQueryResult = NonNullable<Awaited<ReturnType<typeof listLlmProviders>>>
+export type ListLlmProvidersQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary List available LLM inference providers
+ */
+
+export function useListLlmProviders<TData = Awaited<ReturnType<typeof listLlmProviders>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLlmProviders>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListLlmProvidersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+
+
+
+
+
 
 export const getCallBaseMcpToolUrl = () => {
 

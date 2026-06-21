@@ -1,5 +1,7 @@
 export default {
   title: "채팅",
+  openAgent: "에이전트 열기",
+  close: "닫기",
   newChat: "새 채팅",
   history: "기록",
   savedChats: "저장된 채팅",

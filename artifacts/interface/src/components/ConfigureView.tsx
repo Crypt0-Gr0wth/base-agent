@@ -1,8 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Download, Upload, ExternalLink } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
@@ -27,14 +29,22 @@ import {
   useSetApiKey,
   useClearApiKey,
   getGetApiKeyStatusQueryKey,
-  useGetMoralisKeyStatus,
-  useSetMoralisKey,
-  useClearMoralisKey,
-  getGetMoralisKeyStatusQueryKey,
-  useGetCoingeckoKeyStatus,
-  useSetCoingeckoKey,
-  useClearCoingeckoKey,
-  getGetCoingeckoKeyStatusQueryKey,
+  useGetSurplusKeyStatus,
+  useSetSurplusKey,
+  useClearSurplusKey,
+  getGetSurplusKeyStatusQueryKey,
+  useGetVeniceKeyStatus,
+  useSetVeniceKey,
+  useClearVeniceKey,
+  getGetVeniceKeyStatusQueryKey,
+  useGetEconomyosKeyStatus,
+  useSetEconomyosKey,
+  useClearEconomyosKey,
+  getGetEconomyosKeyStatusQueryKey,
+  useGetLlmProvider,
+  useSetLlmProvider,
+  getGetLlmProviderQueryKey,
+  useListLlmProviders,
   getListModelsQueryKey,
   useGetMemory,
   useUpdateMemory,
@@ -42,8 +52,116 @@ import {
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { useT } from "@/i18n";
+import { useT, type TFn } from "@/i18n";
 import { ServicesTab } from "./ServicesTab";
+
+const LLM_META: Record<string, { placeholder: string; url: string }> = {
+  openrouter: { placeholder: "sk-or-v1-...", url: "https://openrouter.ai/keys" },
+  surplus: { placeholder: "inf_...", url: "https://www.surplusintelligence.ai" },
+  venice: { placeholder: "vk_...", url: "https://venice.ai/settings/api" },
+  economyos: {
+    placeholder: "your virtuals api key",
+    url: "https://compute.virtuals.io",
+  },
+};
+
+function KeyPopover({
+  configured,
+  masked,
+  userProvided,
+  draft,
+  setDraft,
+  onSave,
+  onClear,
+  saving,
+  placeholder,
+  getKeyUrl,
+  t,
+}: {
+  configured: boolean;
+  masked?: string;
+  userProvided?: boolean;
+  draft: string;
+  setDraft: (v: string) => void;
+  onSave: () => void | Promise<void>;
+  onClear: () => void | Promise<void>;
+  saving: boolean;
+  placeholder: string;
+  getKeyUrl: string;
+  t: TFn;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-[10px] text-muted-foreground shrink-0 transition-colors cursor-pointer hover:bg-muted/80 hover:text-foreground"
+          aria-expanded={open}
+        >
+          {t("services.setApi")}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-72 p-0 overflow-hidden">
+        <div className="px-4 pt-3.5 pb-2.5 text-left">
+          <p className="text-sm font-medium tracking-tight">
+            {t("services.setApi")}
+          </p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">
+            {configured
+              ? userProvided
+                ? t("configure.userKeyStatus", { masked: masked ?? "" })
+                : t("configure.envKeyStatus", { masked: masked ?? "" })
+              : t("configure.noKeySet")}
+          </p>
+        </div>
+        <div className="px-4 pb-4 space-y-2.5">
+          <a
+            href={getKeyUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {t("wallet.getKey")} <ExternalLink className="h-2.5 w-2.5" />
+          </a>
+          <Input
+            type="password"
+            placeholder={configured ? masked : placeholder}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            className="h-8 font-mono text-xs"
+            autoComplete="off"
+            aria-label={t("wallet.apiKeyPlaceholder")}
+          />
+          <div className="flex items-center gap-2 pt-0.5">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="h-8 flex-1"
+              disabled={draft.trim().length < 8 || saving}
+              onClick={() => void onSave()}
+            >
+              {t("common.save")}
+            </Button>
+            {userProvided && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={saving}
+                onClick={() => void onClear()}
+              >
+                {t("configure.clear")}
+              </Button>
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 export function ConfigureView() {
   const t = useT();
@@ -51,25 +169,52 @@ export function ConfigureView() {
   const { toast } = useToast();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
-  const [moralisDraft, setMoralisDraft] = useState("");
-  const [coingeckoDraft, setCoingeckoDraft] = useState("");
+  const [surplusDraft, setSurplusDraft] = useState("");
+  const [veniceDraft, setVeniceDraft] = useState("");
+  const [economyosDraft, setEconomyosDraft] = useState("");
 
   const { data: keyStatus } = useGetApiKeyStatus();
   const setApiKey = useSetApiKey();
   const clearApiKey = useClearApiKey();
 
-  const { data: moralisStatus } = useGetMoralisKeyStatus();
-  const setMoralisKey = useSetMoralisKey();
-  const clearMoralisKey = useClearMoralisKey();
+  const { data: surplusStatus } = useGetSurplusKeyStatus();
+  const setSurplusKey = useSetSurplusKey();
+  const clearSurplusKey = useClearSurplusKey();
 
-  const { data: coingeckoStatus } = useGetCoingeckoKeyStatus();
-  const setCoingeckoKey = useSetCoingeckoKey();
-  const clearCoingeckoKey = useClearCoingeckoKey();
+  const { data: veniceStatus } = useGetVeniceKeyStatus();
+  const setVeniceKey = useSetVeniceKey();
+  const clearVeniceKey = useClearVeniceKey();
+
+  const { data: economyosStatus } = useGetEconomyosKeyStatus();
+  const setEconomyosKey = useSetEconomyosKey();
+  const clearEconomyosKey = useClearEconomyosKey();
+
+  const { data: providerData } = useGetLlmProvider();
+  const setProvider = useSetLlmProvider();
+  const { data: providerList } = useListLlmProviders();
+  const activeProvider = providerData?.provider ?? "openrouter";
+  const providers = providerList?.providers ?? [
+    { id: "surplus", label: "Surplus Intelligence" },
+    { id: "venice", label: "Venice" },
+    { id: "economyos", label: "EconomyOS" },
+    { id: "openrouter", label: "OpenRouter" },
+  ];
+  const visibleProviders = providers.filter((p) => p.id !== "bunnyos");
+  const visibleActiveProvider =
+    activeProvider === "bunnyos" ? "openrouter" : activeProvider;
+  const activeKeyConfigured =
+    visibleActiveProvider === "surplus"
+      ? Boolean(surplusStatus?.configured)
+      : visibleActiveProvider === "venice"
+        ? Boolean(veniceStatus?.configured)
+        : visibleActiveProvider === "economyos"
+          ? Boolean(economyosStatus?.configured)
+          : Boolean(keyStatus?.configured);
 
   const { data: models = [] } = useListModels({
     query: {
-      queryKey: ["/api/models"],
-      enabled: Boolean(keyStatus?.configured),
+      queryKey: ["/api/models", activeProvider],
+      enabled: activeKeyConfigured,
     },
   });
   const { data: currentModelData } = useGetCurrentModel();
@@ -79,6 +224,33 @@ export function ConfigureView() {
     query: { queryKey: getGetMemoryQueryKey() },
   });
   const updateMemory = useUpdateMemory();
+
+  // bunnyDS active = managed gateway on AND configured. When active the user's
+  // own data/inference keys are bypassed, so the key + provider sections in the
+  // services tab are hidden.
+  const [bunnyDsActive, setBunnyDsActive] = useState(false);
+  const [tab, setTab] = useState("services");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const r = await fetch("/api/settings/bunny-ds");
+        if (!r.ok) return;
+        const j = (await r.json()) as {
+          enabled?: boolean;
+          gatewayConfigured?: boolean;
+        };
+        if (cancelled) return;
+        const active = Boolean(j.enabled) && Boolean(j.gatewayConfigured);
+        setBunnyDsActive(active);
+      } catch {
+        /* leave tabs enabled on failure */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const [draft, setDraft] = useState<string | null>(null);
   const serverContent = memory?.content;
@@ -104,34 +276,66 @@ export function ConfigureView() {
     queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
   };
 
-  const handleSaveMoralis = async () => {
-    if (moralisDraft.trim().length < 8) return;
-    await setMoralisKey.mutateAsync({ data: { apiKey: moralisDraft.trim() } });
-    setMoralisDraft("");
-    queryClient.invalidateQueries({ queryKey: getGetMoralisKeyStatusQueryKey() });
-  };
-
-  const handleClearMoralis = async () => {
-    await clearMoralisKey.mutateAsync();
-    queryClient.invalidateQueries({ queryKey: getGetMoralisKeyStatusQueryKey() });
-  };
-
-  const handleSaveCoingecko = async () => {
-    if (coingeckoDraft.trim().length < 8) return;
-    await setCoingeckoKey.mutateAsync({
-      data: { apiKey: coingeckoDraft.trim() },
-    });
-    setCoingeckoDraft("");
+  const handleSaveSurplus = async () => {
+    if (surplusDraft.trim().length < 8) return;
+    await setSurplusKey.mutateAsync({ data: { apiKey: surplusDraft.trim() } });
+    setSurplusDraft("");
     queryClient.invalidateQueries({
-      queryKey: getGetCoingeckoKeyStatusQueryKey(),
+      queryKey: getGetSurplusKeyStatusQueryKey(),
     });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
   };
 
-  const handleClearCoingecko = async () => {
-    await clearCoingeckoKey.mutateAsync();
+  const handleClearSurplus = async () => {
+    await clearSurplusKey.mutateAsync();
     queryClient.invalidateQueries({
-      queryKey: getGetCoingeckoKeyStatusQueryKey(),
+      queryKey: getGetSurplusKeyStatusQueryKey(),
     });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
+  };
+
+  const handleSaveVenice = async () => {
+    if (veniceDraft.trim().length < 8) return;
+    await setVeniceKey.mutateAsync({ data: { apiKey: veniceDraft.trim() } });
+    setVeniceDraft("");
+    queryClient.invalidateQueries({
+      queryKey: getGetVeniceKeyStatusQueryKey(),
+    });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
+  };
+
+  const handleClearVenice = async () => {
+    await clearVeniceKey.mutateAsync();
+    queryClient.invalidateQueries({
+      queryKey: getGetVeniceKeyStatusQueryKey(),
+    });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
+  };
+
+  const handleSaveEconomyos = async () => {
+    if (economyosDraft.trim().length < 8) return;
+    await setEconomyosKey.mutateAsync({ data: { apiKey: economyosDraft.trim() } });
+    setEconomyosDraft("");
+    queryClient.invalidateQueries({
+      queryKey: getGetEconomyosKeyStatusQueryKey(),
+    });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
+  };
+
+  const handleClearEconomyos = async () => {
+    await clearEconomyosKey.mutateAsync();
+    queryClient.invalidateQueries({
+      queryKey: getGetEconomyosKeyStatusQueryKey(),
+    });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
+  };
+
+  const handleSelectProvider = async (provider: string) => {
+    if (provider === activeProvider) return;
+    await setProvider.mutateAsync({ data: { provider } });
+    queryClient.invalidateQueries({ queryKey: getGetLlmProviderQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getListModelsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetCurrentModelQueryKey() });
   };
 
   const handleSelectModel = (modelId: string) => {
@@ -196,296 +400,200 @@ export function ConfigureView() {
     }
   };
 
-  return (
-    <div className="h-full w-full overflow-y-auto bg-background">
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
-        <div className="mb-4">
-          <h2 className="font-sans text-lg font-medium">{t("common.configure")}</h2>
-          <p className="font-sans text-xs text-muted-foreground mt-1">
-            {t("configure.subtitle")}
-          </p>
-        </div>
+  const llmCfg: Record<
+    string,
+    {
+      status?: { configured: boolean; masked: string; userProvided: boolean };
+      draft: string;
+      setDraft: (v: string) => void;
+      onSave: () => Promise<void>;
+      onClear: () => Promise<void>;
+      saving: boolean;
+    }
+  > = {
+    openrouter: {
+      status: keyStatus,
+      draft: keyDraft,
+      setDraft: setKeyDraft,
+      onSave: handleSaveKey,
+      onClear: handleClearKey,
+      saving: setApiKey.isPending,
+    },
+    surplus: {
+      status: surplusStatus,
+      draft: surplusDraft,
+      setDraft: setSurplusDraft,
+      onSave: handleSaveSurplus,
+      onClear: handleClearSurplus,
+      saving: setSurplusKey.isPending,
+    },
+    venice: {
+      status: veniceStatus,
+      draft: veniceDraft,
+      setDraft: setVeniceDraft,
+      onSave: handleSaveVenice,
+      onClear: handleClearVenice,
+      saving: setVeniceKey.isPending,
+    },
+    economyos: {
+      status: economyosStatus,
+      draft: economyosDraft,
+      setDraft: setEconomyosDraft,
+      onSave: handleSaveEconomyos,
+      onClear: handleClearEconomyos,
+      saving: setEconomyosKey.isPending,
+    },
+  };
 
-        <Tabs defaultValue="api" className="mt-2">
-          <TabsList className="grid grid-cols-2 sm:grid-cols-4 w-full h-auto font-mono text-xs">
-            <TabsTrigger value="api">{t("configure.tabApi")}</TabsTrigger>
-            <TabsTrigger value="llm">{t("configure.tabLlm")}</TabsTrigger>
+  return (
+    <div className="flex h-full w-full flex-col bg-background">
+      <PageHeader
+        title={t("common.configure")}
+        subtitle={t("configure.subtitle")}
+      />
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+        <Tabs value={tab} onValueChange={setTab} className="mt-2">
+          <TabsList className="grid grid-cols-2 w-full h-auto font-mono text-xs">
             <TabsTrigger value="services">{t("configure.tabServices")}</TabsTrigger>
             <TabsTrigger value="memory">{t("configure.tabMemory")}</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="api" className="space-y-5 py-3 font-mono">
-            <div className="rounded-md border border-border/60 bg-secondary/30 px-3 py-2 text-[11px] leading-relaxed text-muted-foreground">
-              {t("configure.keysIntroPrefix")}{" "}
-              <span className="text-foreground">
-                {t("configure.keysIntroRequired")}
-              </span>{" "}
-              {t("configure.keysIntroSuffix")}
-            </div>
+          <TabsContent value="services" className="space-y-5 py-3 font-mono">
+            {!bunnyDsActive && (
+                <div className="rounded-md border border-border/60 p-3 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-foreground">
+                      {t("configure.llmGroupLabel")}
+                      <span className="text-red ml-1">
+                        {t("configure.requiredMark")}
+                      </span>
+                    </span>
+                    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] text-muted-foreground">
+                      {t("configure.llmGroupHint")}
+                    </span>
+                  </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="api-key" className="text-xs">
-                  {t("configure.openrouterKeyLabel")}{" "}
-                  <span className="text-red ml-1">{t("configure.requiredMark")}</span>
-                </Label>
-                <a
-                  href="https://openrouter.ai/credits"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-accent hover:opacity-90 inline-flex items-center gap-1"
-                  data-testid="link-openrouter-topup"
-                >
-                  {t("configure.topUp")} <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  id="api-key"
-                  type="password"
-                  placeholder={
-                    keyStatus?.configured ? keyStatus.masked : "sk-or-v1-..."
-                  }
-                  value={keyDraft}
-                  onChange={(e) => setKeyDraft(e.target.value)}
-                  className="font-mono text-xs h-8"
-                  data-testid="input-api-key"
-                />
-                <Button
-                  size="sm"
-                  className="h-8 text-xs font-mono"
-                  onClick={handleSaveKey}
-                  disabled={keyDraft.trim().length < 8 || setApiKey.isPending}
-                  data-testid="button-save-key"
-                >
-                  {t("common.save")}
-                </Button>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span
-                  className={
-                    keyStatus?.configured
-                      ? "text-green"
-                      : "text-muted-foreground"
-                  }
-                >
-                  {keyStatus?.configured
-                    ? keyStatus.userProvided
-                      ? t("configure.userKeyStatus", { masked: keyStatus.masked })
-                      : t("configure.envKeyStatus", { masked: keyStatus.masked })
-                    : t("configure.noKeySet")}
-                </span>
-                {keyStatus?.userProvided && (
-                  <button
-                    className="text-muted-foreground hover:text-red underline-offset-2 hover:underline"
-                    onClick={handleClearKey}
-                    data-testid="button-clear-key"
-                  >
-                    {t("configure.clear")}
-                  </button>
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                {t("configure.openrouterHelp")}
-              </p>
-            </div>
+                  <div className="flex flex-col">
+                    {visibleProviders.map((provider) => {
+                      const cfg = llmCfg[provider.id];
+                      const meta = LLM_META[provider.id];
+                      const isActive = provider.id === visibleActiveProvider;
+                      const configured = Boolean(cfg?.status?.configured);
+                      const dotColor = configured
+                        ? "bg-green"
+                        : "bg-muted-foreground/40";
+                      const nameColor = isActive
+                        ? "text-foreground"
+                        : "text-muted-foreground";
+                      return (
+                        <div
+                          key={provider.id}
+                          className="flex items-center justify-between gap-2 py-1.5 border-b border-border/40 last:border-b-0"
+                        >
+                          <span className="flex items-center gap-2 min-w-0 flex-1">
+                            <span
+                              className={`inline-block h-1.5 w-1.5 rounded-full shrink-0 ${dotColor}`}
+                            />
+                            <span
+                              className={`font-sans text-sm truncate lowercase ${nameColor}`}
+                            >
+                              {provider.label}
+                            </span>
+                          </span>
+                          {cfg && meta && (
+                            <KeyPopover
+                              configured={configured}
+                              masked={cfg.status?.masked}
+                              userProvided={cfg.status?.userProvided}
+                              draft={cfg.draft}
+                              setDraft={cfg.setDraft}
+                              onSave={cfg.onSave}
+                              onClear={cfg.onClear}
+                              saving={cfg.saving}
+                              placeholder={meta.placeholder}
+                              getKeyUrl={meta.url}
+                              t={t}
+                            />
+                          )}
+                          <Switch
+                            checked={isActive}
+                            onCheckedChange={(v) => {
+                              if (v) void handleSelectProvider(provider.id);
+                            }}
+                            disabled={setProvider.isPending}
+                            className="shrink-0 scale-75 -mr-1"
+                            aria-label={provider.label}
+                            data-testid={`switch-provider-${provider.id}`}
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="moralis-key" className="text-xs">
-                  {t("configure.moralisKeyLabel")}{" "}
-                  <span className="text-red ml-1">{t("configure.requiredMark")}</span>
-                </Label>
-                <a
-                  href="https://admin.moralis.com"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-accent hover:opacity-90 inline-flex items-center gap-1"
-                  data-testid="link-moralis-signup"
-                >
-                  {t("configure.getFreeKey")} <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  id="moralis-key"
-                  type="password"
-                  placeholder={
-                    moralisStatus?.configured ? moralisStatus.masked : "eyJ..."
-                  }
-                  value={moralisDraft}
-                  onChange={(e) => setMoralisDraft(e.target.value)}
-                  className="font-mono text-xs h-8"
-                  data-testid="input-moralis-key"
-                />
-                <Button
-                  size="sm"
-                  className="h-8 text-xs font-mono"
-                  onClick={handleSaveMoralis}
-                  disabled={
-                    moralisDraft.trim().length < 8 || setMoralisKey.isPending
-                  }
-                  data-testid="button-save-moralis-key"
-                >
-                  {t("common.save")}
-                </Button>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span
-                  className={
-                    moralisStatus?.configured
-                      ? "text-green"
-                      : "text-muted-foreground"
-                  }
-                >
-                  {moralisStatus?.configured
-                    ? moralisStatus.userProvided
-                      ? t("configure.userKeyStatus", { masked: moralisStatus.masked })
-                      : t("configure.envKeyStatus", { masked: moralisStatus.masked })
-                    : t("configure.noKeySet")}
-                </span>
-                {moralisStatus?.userProvided && (
-                  <button
-                    className="text-muted-foreground hover:text-red underline-offset-2 hover:underline"
-                    onClick={handleClearMoralis}
-                    data-testid="button-clear-moralis-key"
-                  >
-                    {t("configure.clear")}
-                  </button>
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                {t("configure.moralisHelp")}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="coingecko-key" className="text-xs">
-                  {t("configure.coingeckoKeyLabel")}{" "}
-                  <span className="text-red ml-1">{t("configure.requiredMark")}</span>
-                </Label>
-                <a
-                  href="https://www.coingecko.com/en/api/pricing"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[10px] text-accent hover:opacity-90 inline-flex items-center gap-1"
-                  data-testid="link-coingecko-signup"
-                >
-                  {t("configure.getFreeKey")} <ExternalLink className="h-2.5 w-2.5" />
-                </a>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Input
-                  id="coingecko-key"
-                  type="password"
-                  placeholder={
-                    coingeckoStatus?.configured ? coingeckoStatus.masked : "CG-xxxx..."
-                  }
-                  value={coingeckoDraft}
-                  onChange={(e) => setCoingeckoDraft(e.target.value)}
-                  className="font-mono text-xs h-8"
-                  data-testid="input-coingecko-key"
-                />
-                <Button
-                  size="sm"
-                  className="h-8 text-xs font-mono"
-                  onClick={handleSaveCoingecko}
-                  disabled={coingeckoDraft.trim().length < 8 || setCoingeckoKey.isPending}
-                  data-testid="button-save-coingecko-key"
-                >
-                  {t("common.save")}
-                </Button>
-              </div>
-              <div className="flex items-center justify-between text-xs">
-                <span
-                  className={
-                    coingeckoStatus?.configured
-                      ? "text-green"
-                      : "text-muted-foreground"
-                  }
-                >
-                  {coingeckoStatus?.configured
-                    ? coingeckoStatus.userProvided
-                      ? t("configure.userKeyStatus", { masked: coingeckoStatus.masked })
-                      : t("configure.envKeyStatus", { masked: coingeckoStatus.masked })
-                    : t("configure.noKeySet")}
-                </span>
-                {coingeckoStatus?.userProvided && (
-                  <button
-                    className="text-muted-foreground hover:text-red underline-offset-2 hover:underline"
-                    onClick={handleClearCoingecko}
-                    data-testid="button-clear-coingecko-key"
-                  >
-                    {t("configure.clear")}
-                  </button>
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground leading-relaxed">
-                {t("configure.coingeckoHelp")}
-              </p>
-            </div>
-
-          </TabsContent>
-
-          <TabsContent value="llm" className="space-y-5 py-3 font-mono">
-            <div className="space-y-2">
-              <Label className="text-xs">{t("configure.modelLabel")}</Label>
-              <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 w-full justify-between text-xs font-mono"
-                    disabled={!keyStatus?.configured}
-                    data-testid="button-model-picker"
-                  >
-                    <span className="truncate">{currentModelName}</span>
-                    <span className="text-muted-foreground ml-2">▾</span>
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-[calc(100vw-2rem)] sm:w-[440px] p-0" align="start">
-                  <Command>
-                    <CommandInput
-                      placeholder={t("configure.searchModels")}
-                      className="font-mono text-xs"
-                    />
-                    <CommandList>
-                      <CommandEmpty className="text-xs p-4 text-center font-mono">
-                        {t("configure.noModelsFound")}
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {models.map((model) => (
-                          <CommandItem
-                            key={model.id}
-                            value={model.name}
-                            onSelect={() => handleSelectModel(model.id)}
-                            className="font-mono text-xs flex justify-between items-center cursor-pointer"
-                          >
-                            <span className="truncate mr-2">{model.name}</span>
-                            {model.free ? (
-                              <span className="text-green shrink-0">{t("configure.free")}</span>
-                            ) : (
-                              <span className="text-muted-foreground shrink-0">
-                                ${model.price_input}
-                              </span>
-                            )}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </CommandList>
-                  </Command>
-                </PopoverContent>
-              </Popover>
-              {!keyStatus?.configured && (
-                <p className="text-[10px] text-muted-foreground">
-                  {t("configure.setKeyToLoadModels")}
-                </p>
+                  <div className="space-y-2">
+                    <Label className="text-xs">{t("configure.modelLabel")}</Label>
+                    <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-full justify-between text-xs font-mono"
+                          disabled={!activeKeyConfigured}
+                          data-testid="button-model-picker"
+                        >
+                          <span className="truncate">{currentModelName}</span>
+                          <span className="text-muted-foreground ml-2">▾</span>
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent
+                        className="w-[calc(100vw-2rem)] sm:w-[440px] p-0"
+                        align="start"
+                      >
+                        <Command>
+                          <CommandInput
+                            placeholder={t("configure.searchModels")}
+                            className="font-mono text-xs"
+                          />
+                          <CommandList>
+                            <CommandEmpty className="text-xs p-4 text-center font-mono">
+                              {t("configure.noModelsFound")}
+                            </CommandEmpty>
+                            <CommandGroup>
+                              {models.map((model) => (
+                                <CommandItem
+                                  key={model.id}
+                                  value={model.name}
+                                  onSelect={() => handleSelectModel(model.id)}
+                                  className="font-mono text-xs flex justify-between items-center cursor-pointer"
+                                >
+                                  <span className="truncate mr-2">
+                                    {model.name}
+                                  </span>
+                                  {model.free ? (
+                                    <span className="text-green shrink-0">
+                                      {t("configure.free")}
+                                    </span>
+                                  ) : (
+                                    <span className="text-muted-foreground shrink-0">
+                                      ${model.price_input}
+                                    </span>
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    {!activeKeyConfigured && (
+                      <p className="text-[10px] text-muted-foreground">
+                        {t("configure.setKeyToLoadModels")}
+                      </p>
+                    )}
+                  </div>
+                </div>
               )}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="services" className="py-3 font-mono">
             <ServicesTab />
           </TabsContent>
 
@@ -555,6 +663,7 @@ export function ConfigureView() {
             </div>
           </TabsContent>
         </Tabs>
+        </div>
       </div>
     </div>
   );

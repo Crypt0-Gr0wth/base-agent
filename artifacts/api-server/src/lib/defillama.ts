@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { toToolText } from "./toon";
 
 // DeFi Llama free API. Two hosts:
 //   - api.llama.fi    → TVL, DEX volumes, fees, yields, stablecoins
@@ -511,7 +512,7 @@ export async function callDefiLlamaTool(
       try {
         const parsed = JSON.parse(text);
         const trimmed = tool.trim(parsed, args);
-        return { isError: false, content: JSON.stringify(trimmed) };
+        return { isError: false, content: toToolText(trimmed) };
       } catch {
         return { isError: false, content: text };
       }

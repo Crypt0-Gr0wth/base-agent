@@ -1,4 +1,5 @@
 import { getContext } from "./memory";
+import { getLiveContext } from "./live-context";
 import { logger } from "./logger";
 import { listTools, callTool, getStatus as getMcpStatus } from "./base-mcp";
 import { OPENROUTER_HTTP_REFERER, OPENROUTER_APP_TITLE } from "./app-meta";
@@ -40,19 +41,65 @@ import {
   callNativeTool,
 } from "./native-tools";
 import {
-  getApiKey,
+  listGmgnTools,
+  findGmgnTool,
+  callGmgnTool,
+} from "./gmgn";
+import {
+  listZerionTools,
+  findZerionTool,
+  callZerionTool,
+  zerionStatus,
+} from "./zerion";
+import {
+  listCoinstatsTools,
+  findCoinstatsTool,
+  callCoinstatsTool,
+  coinstatsStatus,
+} from "./coinstats";
+import {
+  listDefinitiveTools,
+  findDefinitiveTool,
+  callDefinitiveTool,
+} from "./definitive";
+import {
   getStoredModel,
   setStoredModel,
   isProtocolEnabled,
 } from "./settings";
+import {
+  getActiveProvider,
+  getActiveApiKey,
+  type LlmProvider,
+} from "./llm-provider";
 import { API_PROTOCOLS } from "../routes/protocols";
 
-export const FALLBACK_MODELS = ["openai/gpt-5.4"];
-
-const DEFAULT_MODEL = process.env["LLM_MODEL"] ?? FALLBACK_MODELS[0]!;
+// Optional env override applies to whatever provider is active.
+const ENV_MODEL = process.env["LLM_MODEL"];
 
 export function getCurrentModelId(): string {
-  return getStoredModel() ?? DEFAULT_MODEL;
+  // When bunnyDS is the active provider, inference is locked to
+  // deepseek-v4-flash (user mandate) — ignore any stored/expensive pick so a
+  // previously-saved model can't escalate cost on the managed gateway.
+  const provider = getActiveProvider();
+  if (provider.id === "bunnyos") return provider.fallbackModels[0]!;
+  return getStoredModel() ?? ENV_MODEL ?? provider.fallbackModels[0]!;
+}
+
+function buildLlmHeaders(
+  apiKey: string,
+  referer: string,
+  provider: LlmProvider,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Authorization: `${provider.authScheme} ${apiKey}`,
+    "Content-Type": "application/json",
+  };
+  if (provider.sendOpenRouterHeaders) {
+    headers["HTTP-Referer"] = referer;
+    headers["X-Title"] = OPENROUTER_APP_TITLE;
+  }
+  return headers;
 }
 
 export async function setCurrentModelId(modelId: string): Promise<string> {
@@ -74,6 +121,7 @@ const SYSTEM_INSTRUCTIONS = `
      - Depegged stablecoin, wrapped asset trading off-peg, or an unusually high APY (often = risk premium, not free money).
      - Approving "unlimited" allowance when a bounded amount would do (prefer bounded when the tool supports it).
      - Action on the wrong chain, wrong token symbol collision (e.g. multiple "USDC"s), or unverified contract.
+     Launchpad provenance is a mitigating signal, not a flag: a token deployed through a reputable launchpad's standard contract (virtuals, bankr, clanker, etc.) carries lower contract-level rug/honeypot risk than a hand-rolled custom contract, because those templated launches remove owner mint/blacklist/hidden-fee backdoors. weight contract risk lower when you can confirm a launchpad origin — but this trusts the launchpad as an honest actor and does NOT remove market risk (thin liquidity, holder concentration, dumps), so still never call it "safe" outright.
      If a check fails hard (insufficient balance, would liquidate immediately, depegged asset), STOP and tell the user — don't proceed and don't ask them to confirm a clearly bad action.
   2. **Then optimize.** Among safe options, prefer higher net APY, lower fees, deeper liquidity, and reputable protocols. Mention the tradeoff in one short line when it matters ("morpho vault X is +0.4% APY vs Y but TVL is 10× smaller — pick Y unless you want the yield"). Don't shill — be neutral and factual.
 
@@ -95,6 +143,8 @@ const SYSTEM_INSTRUCTIONS = `
 
   # Onchain write flow (prepare → execute) — THE most important contract
   Bunny never broadcasts transactions itself. Every write action is two strict steps in the SAME assistant turn.
+
+  **Step 0 — CONNECTION PREFLIGHT (do this FIRST for any wallet/onchain request).** Every transaction needs the user's Base wallet. If the status note says "Base MCP NOT connected" (or the batched-calls / wallet tools are absent from the live tool list), the user is NOT logged in. In that case do NOT say a tool is "missing" or that you "can't" do it — instead tell the user, in one short line, how to log in EXACTLY as the status note describes for this surface (the connect step differs between the web app and Telegram), then re-ask. This applies to swaps, sends, deposits, withdrawals, trades, approvals, and any portfolio/balance read that needs the wallet. Reads that don't need the wallet (prices, token research, market data) still work — answer those normally.
 
   **Step 1 — PREPARE.** Call any tool whose name contains "prepare" (or "build", or otherwise returns unsigned transactions). The result has a top-level "transactions" array. Each entry looks like { to, value?, data? }. There may also be a "requirements" array describing approvals — that is INFORMATIONAL ONLY; the approval txs are ALREADY inside "transactions". Do not skip them.
 
@@ -141,9 +191,12 @@ const SYSTEM_INSTRUCTIONS = `
   - "calls array was empty" / "At least one call is required" → you forgot to forward the prepared transactions. Re-call the batched-calls tool NOW with every entry from the last prepare result's "transactions" array. Do not stop, do not re-prepare.
   - "useroperation reverted" / "failed to estimate gas" → simulation failed. Most likely (a) you dropped the approval tx — re-run prepare and include EVERY tx; (b) insufficient balance — check via a balance tool and tell the user; (c) stale or wrong address/params — re-discover. Do NOT blindly retry identical calls.
   - "Protocol X is disabled by the user" → tell the user to enable it in the Protocols panel. Do not retry.
-  - Required server not connected → tell the user the single thing to connect (e.g. click "Connect Base" in the top bar). Do not retry.
+  - Required server not connected → tell the user the single thing to connect, exactly as the status note describes for this surface (web app vs Telegram). Do not retry.
   - Empty or garbled tool result → say so and stop. Don't fabricate.
   - Rate limited (429) → tell the user and stop. Don't loop.
+
+  # Tool result format
+  - Some tool results are TOON, not JSON. A line like \`[N]{field1,field2}:\` followed by N comma-separated rows is an array of N objects with those fields, in order; indented \`key: value\` lines are object fields. Read it exactly as the equivalent JSON.
 
   # Stop conditions
   - Write action: stop once you've produced an approval URL. Don't call more tools, don't ask for confirmation — the wallet UI is where the user confirms.
@@ -154,6 +207,11 @@ const SYSTEM_INSTRUCTIONS = `
   `.trim();
 
 export type AgentLang = "en" | "zh" | "ko";
+
+// Which surface the agent is answering on. Only affects user-facing wording that
+// differs between channels (e.g. how to connect a Base wallet — a top-bar button
+// on the web app vs opening the web app from inside Telegram).
+export type AgentSurface = "web" | "telegram";
 
 // Tolerant normalizer for the optional `lang` field sent by the client. Unknown
 // or missing values fall back to English so existing behavior is unchanged.
@@ -177,9 +235,32 @@ export function languageDirective(lang: AgentLang): string {
   return `\n\n  # Language\n  Respond ONLY in English, regardless of the language of the user's memory notes, prior messages, or any tool output. Keep token tickers, contract addresses, numbers, URLs, and protocol/tool names in their original form.`;
 }
 
+// Short, task-adjacent restatement of the language rule. Placed at the END of
+// the action-generation user message so recency reinforces it: the user's saved
+// action instructions and recent prior findings fed to the model may be written
+// in another language, and weaker models (deepseek) otherwise drift to match
+// that surrounding context even when a different language is selected.
+export function languageReminder(lang: AgentLang): string {
+  const name =
+    lang === "zh" ? "Simplified Chinese (简体中文)" : lang === "ko" ? "Korean (한국어)" : "English";
+  return `\n\nLANGUAGE (override): the action instructions and prior findings above may be written in another language, but you MUST write every user-facing field you emit — emit_alert.title/summary and emit_recommendation.title/why/executeInstructions — in ${name}. Keep token tickers, contract addresses, numbers, URLs, and protocol/tool names in their original form.`;
+}
+
+// One executed tool call captured during a run, exposed so non-streaming
+// callers (the Telegram bot) can post-process tool output — e.g. auto-detect
+// chartable data and render it. `args` is the parsed argument object; `result`
+// is the raw (already length-capped) tool result string.
+export interface ToolInvocation {
+  name: string;
+  args: unknown;
+  result: string;
+  isError: boolean;
+}
+
 export interface BunnyRunResult {
   response: string;
   model: string;
+  toolInvocations: ToolInvocation[];
 }
 
 export type BunnyStreamEvent =
@@ -235,14 +316,10 @@ export async function callOpenRouter(
     body["tools"] = tools;
     body["tool_choice"] = "auto";
   }
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const provider = getActiveProvider();
+  const resp = await fetch(provider.chatCompletionsUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": referer,
-      "X-Title": OPENROUTER_APP_TITLE,
-    },
+    headers: buildLlmHeaders(apiKey, referer, provider),
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
@@ -364,6 +441,66 @@ export async function getMcpToolsForOpenRouter(): Promise<OpenRouterTool[]> {
     }
     if (isProtocolEnabled("avantis")) {
       for (const t of listAvantisTools()) {
+        out.push({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description || t.name,
+            parameters:
+              typeof t.inputSchema === "object" && t.inputSchema
+                ? t.inputSchema
+                : { type: "object", properties: {} },
+          },
+        });
+      }
+    }
+    if (isProtocolEnabled("gmgn")) {
+      for (const t of listGmgnTools()) {
+        out.push({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description || t.name,
+            parameters:
+              typeof t.inputSchema === "object" && t.inputSchema
+                ? t.inputSchema
+                : { type: "object", properties: {} },
+          },
+        });
+      }
+    }
+    if (zerionStatus().connected && isProtocolEnabled("zerion")) {
+      for (const t of listZerionTools()) {
+        out.push({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description || t.name,
+            parameters:
+              typeof t.inputSchema === "object" && t.inputSchema
+                ? t.inputSchema
+                : { type: "object", properties: {} },
+          },
+        });
+      }
+    }
+    if (coinstatsStatus().connected && isProtocolEnabled("coinstats")) {
+      for (const t of listCoinstatsTools()) {
+        out.push({
+          type: "function" as const,
+          function: {
+            name: t.name,
+            description: t.description || t.name,
+            parameters:
+              typeof t.inputSchema === "object" && t.inputSchema
+                ? t.inputSchema
+                : { type: "object", properties: {} },
+          },
+        });
+      }
+    }
+    if (isProtocolEnabled("definitive")) {
+      for (const t of listDefinitiveTools()) {
         out.push({
           type: "function" as const,
           function: {
@@ -543,11 +680,31 @@ export async function dispatchToolCall(
       throw new Error("Avantis is disabled by the user");
     }
     result = await callAvantisTool(name, args);
+  } else if (findGmgnTool(name)) {
+    if (!isProtocolEnabled("gmgn")) {
+      throw new Error("GMGN is disabled by the user");
+    }
+    result = await callGmgnTool(name, args);
+  } else if (findZerionTool(name)) {
+    if (!isProtocolEnabled("zerion")) {
+      throw new Error("Zerion is disabled by the user");
+    }
+    result = await callZerionTool(name, args);
+  } else if (findCoinstatsTool(name)) {
+    if (!isProtocolEnabled("coinstats")) {
+      throw new Error("CoinStats is disabled by the user");
+    }
+    result = await callCoinstatsTool(name, args);
   } else if (findNativeTool(name)) {
     if (!isProtocolEnabled("native")) {
       throw new Error("bunnyOS native tools are disabled by the user");
     }
     result = await callNativeTool(name, args);
+  } else if (findDefinitiveTool(name)) {
+    if (!isProtocolEnabled("definitive")) {
+      throw new Error("Definitive Flash is disabled by the user");
+    }
+    result = await callDefinitiveTool(name, args);
   } else {
     if (!isProtocolEnabled("base")) {
       throw new Error("Base MCP is disabled by the user");
@@ -564,15 +721,19 @@ export async function dispatchToolCall(
   return result;
 }
 
-function buildMcpStatusNote(toolCount: number): string {
+function buildMcpStatusNote(toolCount: number, surface: AgentSurface = "web"): string {
   const parts: string[] = [];
   const baseEnabled = isProtocolEnabled("base");
+  const connectHowto =
+    surface === "telegram"
+      ? `tell the user, in one short line, that they need to connect their base wallet first to do that — phrase it naturally like "connect your base wallet to do that" (keep the words "connect" and "wallet"). a tap-to-connect button will be shown automatically under your reply, and they can also send /connect anytime`
+      : `tell the user to log in via "Connect Base" in the top bar`;
   parts.push(
     !baseEnabled
       ? `Base MCP DISABLED by user.`
       : toolCount > 0
         ? `Base MCP CONNECTED.`
-        : `Base MCP NOT connected.`,
+        : `Base MCP NOT connected — the user is NOT logged in to their Base wallet, so no wallet/transaction tools are available. For ANY transaction or wallet-dependent request (swap, send, deposit, withdraw, trade, approve, portfolio/balance), do NOT claim a tool is missing; ${connectHowto} first.`,
   );
   const anon = listAnonMcpStatuses();
   for (const a of anon) {
@@ -600,7 +761,7 @@ function buildMcpStatusNote(toolCount: number): string {
   return parts.join(" ");
 }
 
-const MAX_TOOL_ROUNDS = 50;
+const MAX_TOOL_ROUNDS = 30;
 
 // Wallet approval landing pages returned by the batched-calls / send_calls
 // tool. We only treat URLs as "approval links" when (a) the tool that
@@ -618,7 +779,7 @@ function isWalletSendTool(name: string): boolean {
   return /send_calls/i.test(name);
 }
 
-function extractApprovalUrls(text: string): string[] {
+export function extractApprovalUrls(text: string): string[] {
   if (!text) return [];
   const matches = text.match(APPROVAL_URL_RE) ?? [];
   // Trim common trailing punctuation that the regex can't easily exclude
@@ -634,16 +795,20 @@ export async function runBunny(
   message: string,
   history?: ChatHistoryTurn[],
   lang: AgentLang = "en",
+  surface: AgentSurface = "web",
 ): Promise<BunnyRunResult> {
-  const apiKey = getApiKey();
+  const apiKey = getActiveApiKey();
   if (!apiKey) {
-    throw new Error("OpenRouter API key is not configured. Set it in the Configure dialog.");
+    throw new Error(
+      `${getActiveProvider().label} API key is not configured. Set it in the Configure dialog.`,
+    );
   }
 
   const memoryContext = getContext();
+  const liveContext = await getLiveContext();
   const mcpTools = await getMcpToolsForOpenRouter();
-  const mcpNote = `\n\n${buildMcpStatusNote(mcpTools.length)}${mcpTools.length ? ` Available tools: ${mcpTools.map((t) => t.function.name).join(", ")}.` : ""}`;
-  const systemPrompt = `${SYSTEM_INSTRUCTIONS}${languageDirective(lang)}\n\n${memoryContext}${mcpNote}`;
+  const mcpNote = `\n\n${buildMcpStatusNote(mcpTools.length, surface)}${mcpTools.length ? ` Available tools: ${mcpTools.map((t) => t.function.name).join(", ")}.` : ""}`;
+  const systemPrompt = `${SYSTEM_INSTRUCTIONS}${languageDirective(lang)}\n\n${memoryContext}${liveContext ? `\n${liveContext}` : ""}${mcpNote}`;
 
   const referer = OPENROUTER_HTTP_REFERER;
 
@@ -654,7 +819,7 @@ export async function runBunny(
   ];
 
   const tried = new Set<string>();
-  const candidates = [getCurrentModelId(), ...FALLBACK_MODELS];
+  const candidates = [getCurrentModelId(), ...getActiveProvider().fallbackModels];
 
   let lastErr: { status: number; text: string } | null = null;
 
@@ -665,6 +830,7 @@ export async function runBunny(
     let attemptOk = true;
     let finalContent = "";
     const ctx = newAgentTurnCtx();
+    const toolInvocations: ToolInvocation[] = [];
 
     try {
       for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -673,7 +839,7 @@ export async function runBunny(
           lastErr = { status: result.status, text: result.text };
           logger.warn(
             { model, status: result.status, text: result.text.slice(0, 200) },
-            "OpenRouter model failed, trying next",
+            "llm model failed, trying next",
           );
           attemptOk = false;
           break;
@@ -681,7 +847,7 @@ export async function runBunny(
         const msg = result.message;
         const toolCalls = msg.tool_calls ?? [];
         if (toolCalls.length === 0) {
-          finalContent = (msg.content ?? "").trim();
+          finalContent = stripDeepSeekControlTokens(msg.content ?? "").trim();
           break;
         }
         // Append assistant message with tool_calls
@@ -700,17 +866,31 @@ export async function runBunny(
           }
           try {
             const toolResult = await dispatchToolCall(tc.function.name, argsObj, ctx);
+            const content = toolResult.content.slice(0, 8000);
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
-              content: toolResult.content.slice(0, 8000),
+              content,
+            });
+            toolInvocations.push({
+              name: tc.function.name,
+              args: argsObj,
+              result: content,
+              isError: toolResult.isError ?? false,
             });
           } catch (err) {
             const m = err instanceof Error ? err.message : String(err);
+            const content = `Error calling ${tc.function.name}: ${m}`;
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
-              content: `Error calling ${tc.function.name}: ${m}`,
+              content,
+            });
+            toolInvocations.push({
+              name: tc.function.name,
+              args: argsObj,
+              result: content,
+              isError: true,
             });
           }
         }
@@ -723,14 +903,14 @@ export async function runBunny(
 
     if (attemptOk) {
       const response = finalContent || "(bunnyOS is quiet — try a different model)";
-      return { response, model };
+      return { response, model, toolInvocations };
     }
   }
 
   const msg = lastErr
-    ? `OpenRouter error ${lastErr.status}: ${lastErr.text.slice(0, 300)}`
+    ? `${getActiveProvider().label} error ${lastErr.status}: ${lastErr.text.slice(0, 300)}`
     : "No models available";
-  logger.error({ lastErr }, "All OpenRouter models failed");
+  logger.error({ lastErr }, "All llm models failed");
   throw new Error(msg);
 }
 
@@ -748,6 +928,33 @@ interface StreamChoice {
   index?: number;
   delta?: StreamDelta;
   finish_reason?: string | null;
+}
+
+// DeepSeek models emit tool calls using fullwidth control tokens such as
+// <｜tool▁calls▁begin｜> … <｜tool▁calls▁end｜>. On the managed gateway these
+// sometimes bleed into delta.content as plain text instead of arriving as
+// structured tool_calls, so they leak into the chat UI. Strip them out.
+function stripDeepSeekControlTokens(s: string): string {
+  // Remove whole tool-call blocks first so their inner name/json text goes too.
+  s = s.replace(/<｜[^>]*?begin[^>]*?｜>[\s\S]*?<｜[^>]*?end[^>]*?｜>/gi, "");
+  // Then strip any remaining standalone control token <｜…｜>.
+  s = s.replace(/<｜[\s\S]*?｜>/g, "");
+  return s;
+}
+
+// Streaming-safe variant: a control token can be split across SSE chunks, so
+// emit only the part that cannot be the start of a partial token and hold the
+// rest back to be re-examined once more content arrives.
+function sanitizeStreamContent(buf: string): { clean: string; rest: string } {
+  const s = stripDeepSeekControlTokens(buf);
+  const lastLt = s.lastIndexOf("<");
+  if (lastLt !== -1) {
+    const tail = s.slice(lastLt);
+    if ((tail === "<" || tail.startsWith("<｜")) && !tail.includes("｜>")) {
+      return { clean: s.slice(0, lastLt), rest: tail };
+    }
+  }
+  return { clean: s, rest: "" };
 }
 
 async function* streamOpenRouterRound(
@@ -772,14 +979,10 @@ async function* streamOpenRouterRound(
     body["tools"] = tools;
     body["tool_choice"] = "auto";
   }
-  const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+  const provider = getActiveProvider();
+  const resp = await fetch(provider.chatCompletionsUrl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": referer,
-      "X-Title": OPENROUTER_APP_TITLE,
-    },
+    headers: buildLlmHeaders(apiKey, referer, provider),
     body: JSON.stringify(body),
   });
   if (!resp.ok || !resp.body) {
@@ -791,6 +994,7 @@ async function* streamOpenRouterRound(
   const decoder = new TextDecoder();
   let buf = "";
   let assistantContent = "";
+  let contentBuf = "";
   const tcMap = new Map<number, { id: string; name: string; args: string }>();
   let finishReason = "stop";
   while (true) {
@@ -814,8 +1018,13 @@ async function* streamOpenRouterRound(
       if (!choice) continue;
       const delta = choice.delta;
       if (delta?.content) {
-        assistantContent += delta.content;
-        yield { kind: "content", delta: delta.content };
+        contentBuf += delta.content;
+        const { clean, rest } = sanitizeStreamContent(contentBuf);
+        contentBuf = rest;
+        if (clean) {
+          assistantContent += clean;
+          yield { kind: "content", delta: clean };
+        }
       }
       if (delta?.tool_calls) {
         for (const tc of delta.tool_calls) {
@@ -829,6 +1038,19 @@ async function* streamOpenRouterRound(
       }
       if (choice.finish_reason) finishReason = choice.finish_reason;
     }
+  }
+  // Flush any held-back tail (strip complete tokens, keep leftover text).
+  if (contentBuf) {
+    let flushed = stripDeepSeekControlTokens(contentBuf);
+    // Drop an unterminated control-token fragment at EOF rather than leak it.
+    if (flushed === "<" || (flushed.startsWith("<｜") && !flushed.includes("｜>"))) {
+      flushed = "";
+    }
+    if (flushed) {
+      assistantContent += flushed;
+      yield { kind: "content", delta: flushed };
+    }
+    contentBuf = "";
   }
   const toolCalls: ToolCall[] = Array.from(tcMap.entries())
     .sort(([a], [b]) => a - b)
@@ -849,20 +1071,20 @@ export async function* streamBunny(
   lang: AgentLang = "en",
 ): AsyncGenerator<BunnyStreamEvent> {
   yield { type: "thinking" };
-  const apiKey = getApiKey();
+  const apiKey = getActiveApiKey();
   if (!apiKey) {
     yield {
       type: "error",
-      message:
-        "OpenRouter API key is not configured. Set it in the Configure dialog.",
+      message: `${getActiveProvider().label} API key is not configured. Set it in the Configure dialog.`,
     };
     return;
   }
 
   const memoryContext = getContext();
+  const liveContext = await getLiveContext();
   const mcpTools = await getMcpToolsForOpenRouter();
   const mcpNote = `\n\n${buildMcpStatusNote(mcpTools.length)}${mcpTools.length ? ` Available tools: ${mcpTools.map((t) => t.function.name).join(", ")}.` : ""}`;
-  const systemPrompt = `${SYSTEM_INSTRUCTIONS}${languageDirective(lang)}\n\n${memoryContext}${mcpNote}`;
+  const systemPrompt = `${SYSTEM_INSTRUCTIONS}${languageDirective(lang)}\n\n${memoryContext}${liveContext ? `\n${liveContext}` : ""}${mcpNote}`;
 
   const referer = OPENROUTER_HTTP_REFERER;
 
@@ -873,7 +1095,7 @@ export async function* streamBunny(
   ];
 
   const tried = new Set<string>();
-  const candidates = [getCurrentModelId(), ...FALLBACK_MODELS];
+  const candidates = [getCurrentModelId(), ...getActiveProvider().fallbackModels];
   let lastErr: { status: number; text: string } | null = null;
 
   for (const model of candidates) {
@@ -904,7 +1126,7 @@ export async function* streamBunny(
             lastErr = { status: ev.status, text: ev.text };
             logger.warn(
               { model, status: ev.status, text: ev.text.slice(0, 200) },
-              "OpenRouter model failed, trying next",
+              "llm model failed, trying next",
             );
             attemptOk = false;
             break;
@@ -1026,9 +1248,9 @@ export async function* streamBunny(
   }
 
   const msg = lastErr
-    ? `OpenRouter error ${lastErr.status}: ${lastErr.text.slice(0, 300)}`
+    ? `${getActiveProvider().label} error ${lastErr.status}: ${lastErr.text.slice(0, 300)}`
     : "No models available";
-  logger.error({ lastErr }, "All OpenRouter models failed (stream)");
+  logger.error({ lastErr }, "All llm models failed (stream)");
   yield { type: "error", message: msg };
 }
 
@@ -1040,15 +1262,16 @@ export interface ListedModel {
 }
 
 export async function listOpenRouterModels(): Promise<ListedModel[]> {
-  const apiKey = getApiKey();
+  const provider = getActiveProvider();
+  const apiKey = getActiveApiKey();
   if (!apiKey) {
-    throw new Error("OpenRouter API key is not configured");
+    throw new Error(`${provider.label} API key is not configured`);
   }
-  const resp = await fetch("https://openrouter.ai/api/v1/models", {
-    headers: { Authorization: `Bearer ${apiKey}` },
+  const resp = await fetch(provider.modelsUrl, {
+    headers: { Authorization: `${provider.authScheme} ${apiKey}` },
   });
   if (!resp.ok) {
-    throw new Error(`OpenRouter models error ${resp.status}`);
+    throw new Error(`${provider.label} models error ${resp.status}`);
   }
   const { data } = (await resp.json()) as {
     data: Array<{

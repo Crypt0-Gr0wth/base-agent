@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTheme } from "@/theme";
 
 const VERT = `
 attribute vec2 a_pos;
@@ -48,6 +49,17 @@ void main() {
 
 export default function WaveBackground() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const { theme } = useTheme();
+  const colorRef = useRef<[number, number, number]>(
+    theme === "dark" ? [0.45, 0.68, 1.0] : [0.18, 0.45, 1.0],
+  );
+  const redrawRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    colorRef.current =
+      theme === "dark" ? [0.45, 0.68, 1.0] : [0.18, 0.45, 1.0];
+    redrawRef.current?.();
+  }, [theme]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -100,8 +112,6 @@ export default function WaveBackground() {
     const uColor = glc.getUniformLocation(prog, "u_color");
     const uDpr = glc.getUniformLocation(prog, "u_dpr");
 
-    glc.uniform3f(uColor, 0.18, 0.45, 1.0);
-
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     glc.uniform1f(uDpr, dpr);
 
@@ -125,15 +135,22 @@ export default function WaveBackground() {
     let raf = 0;
     let running = true;
 
-    const render = () => {
-      if (!running) return;
+    const draw = () => {
       const tSec = (performance.now() - start) / 1000;
       glc.uniform1f(uTime, reduceMotion ? 0 : tSec);
+      const c = colorRef.current;
+      glc.uniform3f(uColor, c[0], c[1], c[2]);
       glc.clearColor(0, 0, 0, 0);
       glc.clear(glc.COLOR_BUFFER_BIT);
       glc.drawArrays(glc.TRIANGLES, 0, 3);
+    };
+
+    const render = () => {
+      if (!running) return;
+      draw();
       if (!reduceMotion) raf = requestAnimationFrame(render);
     };
+    redrawRef.current = draw;
     render();
 
     const onVis = () => {
@@ -152,6 +169,7 @@ export default function WaveBackground() {
       cancelAnimationFrame(raf);
       ro.disconnect();
       document.removeEventListener("visibilitychange", onVis);
+      redrawRef.current = null;
     };
   }, []);
 

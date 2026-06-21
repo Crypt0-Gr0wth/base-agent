@@ -11,6 +11,12 @@ import actionsRouter from "./actions";
 import workflowsRouter from "./workflows";
 import tokensRouter from "./tokens";
 import perpsRouter from "./perps";
+import portfolioRouter from "./portfolio";
+import coinstatsRouter from "./coinstats";
+import bunnyRouter from "./bunny";
+import bunnydsRouter from "./bunnyds";
+import telegramRouter from "./telegram";
+import storageRouter from "./storage";
 import authRouter from "./auth";
 
 const router: IRouter = Router();
@@ -28,5 +34,11 @@ router.use(actionsRouter);
 router.use(workflowsRouter);
 router.use(tokensRouter);
 router.use(perpsRouter);
+router.use(portfolioRouter);
+router.use(coinstatsRouter);
+router.use(bunnyRouter);
+router.use(bunnydsRouter);
+router.use(telegramRouter);
+router.use(storageRouter);
 
 export default router;

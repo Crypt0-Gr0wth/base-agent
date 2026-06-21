@@ -1,14 +1,22 @@
 import { Router, type IRouter } from "express";
-import { callMoralisTool, moralisStatus } from "../lib/moralis";
 import { callBankrTool } from "../lib/bankr";
+import { parseToolContent } from "../lib/toon";
 import {
   getCoinGeckoPoolData,
   getCoinGeckoTokenOhlcv,
   getCoinGeckoTokenOnchain,
+  getCoinGeckoTrendingTokens,
+  searchCoinGeckoOnchainTokens,
+  coinGeckoStatus,
   type CoinGeckoMarketData,
   type CoinGeckoOhlcvPoint,
 } from "../lib/coingecko";
-import { getTokenSecurity, getTokenSecuritySafe, summarizeSecurity } from "../lib/goplus";
+import {
+  getTokenSecurity,
+  getTokenSecuritySafe,
+  summarizeSecurity,
+} from "../lib/token-security";
+import { getTokenDistributionSafe, summarizeDistribution } from "../lib/gmgn";
 import { streamBunny, normalizeAgentLang, type AgentLang } from "../lib/bunny-agent";
 import { take } from "../lib/rate-limit";
 import { getCurrentUserId } from "../lib/user";
@@ -46,59 +54,6 @@ function num(v: unknown): number | null {
 
 function str(v: unknown): string {
   return typeof v === "string" ? v : "";
-}
-
-// Pull a nested window value (e.g. pricePercentChange["24h"]) tolerating the
-// few shapes Moralis has used: a keyed object ({ "1h": .., "24h": .. }) or a
-// flat field. Returns null when absent.
-function window(obj: Record<string, unknown>, key: string, win: string): number | null {
-  const nested = obj[key];
-  if (nested && typeof nested === "object") {
-    return num((nested as Record<string, unknown>)[win]);
-  }
-  return null;
-}
-
-function normalizeToken(raw: unknown): TrendingToken | null {
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  const tokenAddress = str(o["tokenAddress"] ?? o["address"] ?? o["token_address"]);
-  if (!tokenAddress) return null;
-  return {
-    tokenAddress,
-    symbol: str(o["symbol"]),
-    name: str(o["name"]),
-    logo: (typeof o["logo"] === "string" && o["logo"])
-      ? (o["logo"] as string)
-      : (typeof o["tokenLogo"] === "string" && o["tokenLogo"]
-          ? (o["tokenLogo"] as string)
-          : null),
-    usdPrice: num(o["usdPrice"] ?? o["priceUsd"] ?? o["price"]),
-    marketCap: num(o["marketCap"] ?? o["fullyDilutedValuation"] ?? o["fdv"]),
-    liquidityUsd: num(o["liquidityUsd"] ?? o["liquidity"]),
-    holders: num(o["holders"] ?? o["holderCount"]),
-    createdAt: num(o["createdAt"] ?? o["created_at"]),
-    pricePercentChange1h: window(o, "pricePercentChange", "1h"),
-    pricePercentChange24h: window(o, "pricePercentChange", "24h"),
-    totalVolume24h: window(o, "totalVolume", "24h"),
-  };
-}
-
-function normalizeTrending(parsed: unknown): TrendingToken[] {
-  let arr: unknown;
-  if (Array.isArray(parsed)) {
-    arr = parsed;
-  } else if (parsed && typeof parsed === "object") {
-    const o = parsed as Record<string, unknown>;
-    arr = o["result"] ?? o["tokens"] ?? o["data"];
-  }
-  if (!Array.isArray(arr)) return [];
-  const out: TrendingToken[] = [];
-  for (const item of arr) {
-    const t = normalizeToken(item);
-    if (t) out.push(t);
-  }
-  return out;
 }
 
 // Bankr's recent token launches carry no price/liquidity/volume/holder
@@ -264,7 +219,7 @@ async function loadBankrTokens(limit: number): Promise<TrendingToken[]> {
   }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(result.content);
+    parsed = parseToolContent(result.content);
   } catch {
     throw new Error("failed to parse bankr response");
   }
@@ -287,29 +242,33 @@ async function loadBankrTokens(limit: number): Promise<TrendingToken[]> {
   return dropBunnyOsScams(enriched.filter((t) => (t.totalVolume24h ?? 0) >= 10));
 }
 
-async function loadMoralisTokens(limit: number): Promise<TrendingToken[]> {
-  const result = await callMoralisTool("moralis_trending_tokens", {
-    chain: "base",
-    limit,
-  });
-  if (result.isError) {
-    throw new Error(result.content.slice(0, 300));
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(result.content);
-  } catch {
-    throw new Error("failed to parse moralis response");
-  }
-  const tokens = dropBunnyOsScams(normalizeTrending(parsed));
-  // Override Moralis' volume with the token's aggregate onchain 24h volume from
-  // CoinGecko (sum across all pools), keeping volume sourced consistently with
-  // the other loaders and the app's CoinGecko market-data mandate.
+// Trending Base tokens from CoinGecko's onchain trending-pools endpoint
+// (`/onchain/networks/base/trending_pools`). Each trending pool is mapped to
+// its base token; identity + market columns come straight from the pool, then
+// volume is overridden with the token's aggregate 24h onchain volume across all
+// pools (consistent with the other loaders and the app's CoinGecko mandate).
+async function loadCoinGeckoTokens(limit: number): Promise<TrendingToken[]> {
+  const trending = await getCoinGeckoTrendingTokens(limit, "base");
+  const tokens: TrendingToken[] = trending.map((t) => ({
+    tokenAddress: t.tokenAddress,
+    symbol: t.symbol,
+    name: t.name,
+    logo: t.logo,
+    usdPrice: t.usdPrice,
+    marketCap: t.marketCap,
+    liquidityUsd: t.liquidityUsd,
+    holders: null,
+    createdAt: t.createdAt,
+    pricePercentChange1h: t.pricePercentChange1h,
+    pricePercentChange24h: t.pricePercentChange24h,
+    totalVolume24h: t.totalVolume24h,
+  }));
+  const filtered = dropBunnyOsScams(tokens);
   const tokenInfo = await getCoinGeckoTokenOnchain(
-    tokens.map((t) => t.tokenAddress),
+    filtered.map((t) => t.tokenAddress),
     "base",
   );
-  return tokens.map((t) => {
+  return filtered.map((t) => {
     const aggVol = tokenInfo.get(t.tokenAddress.toLowerCase())?.volume24h;
     return aggVol != null ? { ...t, totalVolume24h: aggVol } : t;
   });
@@ -427,8 +386,8 @@ async function loadVirtualsTokens(limit: number): Promise<TrendingToken[]> {
   ).slice(0, limit);
 }
 
-// The explorer table is expensive to populate — Moralis trending burns a chunk
-// of the per-user rate budget per call — so the result list is cached
+// The explorer table is expensive to populate — each trending fetch burns a
+// chunk of the per-user rate budget per call — so the result list is cached
 // process-wide for an hour, keyed by source+limit. Page revisits (which remount
 // the query after React Query's gc) serve from cache instead of re-hitting the
 // upstream API; the client only forces a fresh fetch via `?fresh=1` when the
@@ -437,11 +396,11 @@ async function loadVirtualsTokens(limit: number): Promise<TrendingToken[]> {
 const LIST_TTL_MS = 60 * 60 * 1000;
 const listCache = new Map<string, { at: number; tokens: TrendingToken[] }>();
 
-// Live Base tokens for the explorer table. Two sources, selected via the
-// `source` query param: "moralis" (trending, full metrics) or "bankr" (recent
-// launches, identity + age only). Both reuse the agent's existing tool paths
-// so they respect the same auth + per-user settings. All filtering/sorting
-// happens client-side.
+// Live Base tokens for the explorer table. Three sources, selected via the
+// `source` query param: "coingecko" (onchain trending pools, default),
+// "virtuals" (graduated AI-agent tokens) and "bankr" (recent launches). All
+// reuse the app's CoinGecko onchain data for market columns and respect the
+// same auth + per-user settings. All filtering/sorting happens client-side.
 router.get("/tokens", async (req, res): Promise<void> => {
   const sourceParam = req.query["source"];
   const source =
@@ -449,7 +408,7 @@ router.get("/tokens", async (req, res): Promise<void> => {
       ? "bankr"
       : sourceParam === "virtuals"
         ? "virtuals"
-        : "moralis";
+        : "coingecko";
   const limitRaw = Number(req.query["limit"]);
   const limit = Number.isFinite(limitRaw)
     ? Math.min(Math.max(Math.trunc(limitRaw), 1), 100)
@@ -511,15 +470,15 @@ router.get("/tokens", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!isProtocolEnabled("moralis")) {
+  if (!isProtocolEnabled("coingecko")) {
     res.status(403).json({
-      error: "moralis is disabled — enable it in configure → services to browse tokens.",
+      error: "coingecko is disabled — enable it in configure → services to browse tokens.",
     });
     return;
   }
-  if (!moralisStatus().connected) {
+  if (!coinGeckoStatus().connected) {
     res.status(400).json({
-      error: "moralis api key not configured — add one in configure → llm.",
+      error: "coingecko api key not configured — add one in configure → llm.",
     });
     return;
   }
@@ -529,7 +488,7 @@ router.get("/tokens", async (req, res): Promise<void> => {
     return;
   }
   try {
-    const tokens = await loadMoralisTokens(limit);
+    const tokens = await loadCoinGeckoTokens(limit);
     listCache.set(cacheKey, { at: Date.now(), tokens });
     res.json({ tokens });
   } catch (err) {
@@ -552,40 +511,9 @@ function toUnixSeconds(v: unknown): number | null {
   return null;
 }
 
-// Build a TrendingToken from Moralis' single-token metadata + price payloads.
-// Only identity, price, market cap, and 24h change are reliably available from
-// these endpoints; liquidity / volume / holders are left null (the report
-// prompt renders them as "unknown" and the agent can still fetch holders).
-function normalizeSingleToken(
-  address: string,
-  meta: unknown,
-  price: unknown,
-): TrendingToken {
-  const m = meta && typeof meta === "object" ? (meta as Record<string, unknown>) : {};
-  const p = price && typeof price === "object" ? (price as Record<string, unknown>) : {};
-  const logo =
-    str(m["logo"]) || str(m["tokenLogo"]) || str(p["tokenLogo"]) || "";
-  return {
-    tokenAddress: address,
-    symbol: str(m["symbol"]) || str(p["tokenSymbol"]),
-    name: str(m["name"]) || str(p["tokenName"]),
-    logo: logo || null,
-    usdPrice: num(p["usdPrice"]) ?? num(m["usdPrice"]),
-    marketCap: num(
-      m["market_cap"] ?? m["marketCap"] ?? m["fully_diluted_valuation"] ?? m["fdv"],
-    ),
-    liquidityUsd: null,
-    holders: null,
-    createdAt: toUnixSeconds(m["created_at"] ?? m["createdAt"]),
-    pricePercentChange1h: null,
-    pricePercentChange24h: num(p["24hrPercentChange"] ?? p["percentChange24h"]),
-    totalVolume24h: null,
-  };
-}
-
 // Look for a token in any cached trending/launches list first — those rows
 // carry the full metric set (liquidity, volume, holders), which is richer than
-// a fresh metadata+price lookup, and it avoids burning Moralis calls.
+// a fresh onchain lookup, and it avoids burning CoinGecko calls.
 function findInListCache(address: string): TrendingToken | null {
   const lower = address.toLowerCase();
   for (const { tokens } of listCache.values()) {
@@ -595,10 +523,57 @@ function findInListCache(address: string): TrendingToken | null {
   return null;
 }
 
+// The official bunnyOS token. Pinned to the top of search results when the user
+// searches the brand terms, and exempt from the impersonator filter on direct
+// lookups (it is itself named "bunnyOS"). Lowercased for comparisons.
+const OFFICIAL_BUNNYOS_ADDRESS =
+  "0xD34cF0759cb65A0fe508bb1DaE0A16Cb5109bB7B";
+
+// Resolve a single token's market data by contract address via the CoinGecko
+// onchain (GeckoTerminal proxy) pool search, which tolerates an address query.
+// Picks the matching token's deepest-liquidity pool. Returns null when CoinGecko
+// has no pool for the address. The search helper never throws (returns [] on
+// error), so callers don't need a try/catch for network failures.
+async function resolveTokenViaCoinGecko(
+  address: string,
+): Promise<TrendingToken | null> {
+  const lower = address.toLowerCase();
+  const results = await searchCoinGeckoOnchainTokens(address, "base");
+  const hit = results.find((r) => r.address.toLowerCase() === lower) ?? null;
+  if (!hit) return null;
+  return {
+    tokenAddress: hit.address,
+    symbol: hit.symbol,
+    name: hit.name,
+    logo: hit.logo,
+    usdPrice: hit.usdPrice,
+    marketCap: hit.marketCap,
+    liquidityUsd: hit.liquidityUsd,
+    holders: null,
+    createdAt: null,
+    pricePercentChange1h: hit.pricePercentChange1h,
+    pricePercentChange24h: hit.pricePercentChange24h,
+    totalVolume24h: hit.totalVolume24h,
+  };
+}
+
+// Best-effort, never-throws resolution of a token by address: list cache first,
+// then CoinGecko when available. Used to pin the official bunnyOS token in search.
+async function resolveTokenSafe(address: string): Promise<TrendingToken | null> {
+  const cached = findInListCache(address);
+  if (cached) return cached;
+  if (!isProtocolEnabled("coingecko") || !coinGeckoStatus().connected) return null;
+  try {
+    return await resolveTokenViaCoinGecko(address);
+  } catch {
+    return null;
+  }
+}
+
 // Single-token lookup by contract address — backs shareable report links
 // (/terminal/report/<address>), where the opener only has the address and must
 // hydrate the report panel without the trending list. Prefers the shared list
-// cache, then falls back to Moralis metadata + price.
+// cache, then falls back to a CoinGecko onchain pool lookup.
 router.get("/tokens/by-address", async (req, res): Promise<void> => {
   const address = String(req.query.address ?? "");
   if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
@@ -620,76 +595,104 @@ router.get("/tokens/by-address", async (req, res): Promise<void> => {
     return;
   }
 
-  if (!isProtocolEnabled("moralis")) {
-    res.status(403).json({
-      error: "moralis is disabled — enable it in configure → services to open token reports.",
-    });
-    return;
-  }
-  if (!moralisStatus().connected) {
+  if (!isProtocolEnabled("coingecko") || !coinGeckoStatus().connected) {
     res.status(400).json({
-      error: "moralis api key not configured — add one in configure → llm.",
+      error:
+        "Token lookup needs CoinGecko. Open Configure → llm → coingecko api key to enable it.",
     });
     return;
   }
 
   try {
-    const [metaRes, priceRes] = await Promise.all([
-      callMoralisTool("moralis_token_metadata", { addresses: [address], chain: "base" }),
-      callMoralisTool("moralis_token_price", { address, chain: "base" }),
-    ]);
-
-    let meta: unknown = null;
-    if (!metaRes.isError) {
-      try {
-        const parsed = JSON.parse(metaRes.content) as unknown;
-        if (Array.isArray(parsed)) {
-          meta = parsed[0] ?? null;
-        } else if (parsed && typeof parsed === "object") {
-          const o = parsed as Record<string, unknown>;
-          const arr = o["result"] ?? o["tokens"] ?? o["data"];
-          meta = Array.isArray(arr) ? arr[0] ?? null : parsed;
-        }
-      } catch {
-        // ignore — fall through with null meta
-      }
-    }
-
-    let price: unknown = null;
-    if (!priceRes.isError) {
-      try {
-        price = JSON.parse(priceRes.content);
-      } catch {
-        // ignore — fall through with null price
-      }
-    }
-
-    if (!meta && !price) {
-      res.json({ token: null });
-      return;
-    }
-    const token = normalizeSingleToken(address, meta, price);
-    // Same scam guard as the lists: don't hydrate a report for a bunnyOS
-    // impersonator opened directly by address (e.g. a shared link).
-    if (mentionsBunnyOs(token.name, token.symbol)) {
-      res.json({ token: null });
-      return;
-    }
-    // Best-effort: fill the token's aggregate onchain 24h volume (sum across all
-    // pools) from CoinGecko, since Moralis metadata/price doesn't include it.
-    // Keeps shared report links consistent with the list/report volume figure.
-    if (isProtocolEnabled("coingecko")) {
-      try {
-        const info = await getCoinGeckoTokenOnchain([address], "base");
-        const aggVol = info.get(address.toLowerCase())?.volume24h;
-        if (aggVol != null) token.totalVolume24h = aggVol;
-      } catch {
-        // best-effort — leave volume as-is
-      }
-    }
+    // No bunnyOS impersonator guard here: a direct contract-address lookup is an
+    // explicit, unambiguous request for that exact token (the user pasted the
+    // CA), so we hydrate the report regardless of name. The impersonator filter
+    // only applies to discovery lists/search, where fake "bunnyOS" tokens sneak
+    // in among results the user didn't specifically ask for.
+    const token = await resolveTokenViaCoinGecko(address);
     res.json({ token });
   } catch (err) {
     req.log.error({ err }, "token by-address lookup failed");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(502).json({ error: message });
+  }
+});
+
+// Free-text token search by name, ticker, or contract address. Backs the
+// Research page search box: a 0x address is handled by /by-address on the
+// client (CoinGecko onchain lookup); this route covers name/ticker (and
+// tolerates addresses) via the CoinGecko onchain pool search. Returns a
+// ranked list of candidates the client renders as a dropdown.
+router.get("/tokens/search", async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  if (q.length < 2) {
+    res.status(400).json({ error: "Enter at least 2 characters to search." });
+    return;
+  }
+
+  const rate = take(getCurrentUserId(), "token");
+  if (!rate.allowed) {
+    res.setHeader("Retry-After", String(rate.retryAfterSec));
+    res
+      .status(429)
+      .json({ error: "rate limit exceeded", retryAfterSec: rate.retryAfterSec });
+    return;
+  }
+
+  if (!isProtocolEnabled("coingecko") || !coinGeckoStatus().connected) {
+    res.status(400).json({
+      error:
+        "Token search needs CoinGecko. Open Configure → llm → coingecko api key to enable it.",
+    });
+    return;
+  }
+
+  try {
+    const results = await searchCoinGeckoOnchainTokens(q, "base");
+    const mapped: TrendingToken[] = results.map((r) => ({
+      tokenAddress: r.address,
+      symbol: r.symbol,
+      name: r.name,
+      logo: r.logo,
+      usdPrice: r.usdPrice,
+      marketCap: r.marketCap,
+      liquidityUsd: r.liquidityUsd,
+      holders: null,
+      createdAt: null,
+      pricePercentChange1h: r.pricePercentChange1h,
+      pricePercentChange24h: r.pricePercentChange24h,
+      totalVolume24h: r.totalVolume24h,
+    }));
+
+    // The impersonator filter strips every "bunnyOS"-named token, including the
+    // real one. Pull the official token out of the CoinGecko results by its
+    // known address first (allowlisted through the filter, no Moralis needed),
+    // then drop it + any impersonators from the rest of the list.
+    const officialLower = OFFICIAL_BUNNYOS_ADDRESS.toLowerCase();
+    const officialFromSearch =
+      mapped.find((t) => t.tokenAddress.toLowerCase() === officialLower) ?? null;
+    const tokens = mapped.filter(
+      (t) =>
+        t.tokenAddress.toLowerCase() !== officialLower &&
+        !mentionsBunnyOs(t.name, t.symbol),
+    );
+
+    // Pin the official bunnyOS token to the top when the user searches the brand
+    // terms. Prefer the row already in the search results; only fall back to a
+    // direct resolve (list cache → Moralis) if the search didn't surface it.
+    const norm = q.toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (norm === "bunnyos" || norm === "bunny" || norm === "os") {
+      const official =
+        officialFromSearch ?? (await resolveTokenSafe(OFFICIAL_BUNNYOS_ADDRESS));
+      if (official) {
+        res.json({ tokens: [official, ...tokens] });
+        return;
+      }
+    }
+
+    res.json({ tokens });
+  } catch (err) {
+    req.log.error({ err }, "token search failed");
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(502).json({ error: message });
   }
@@ -731,6 +734,7 @@ function fmtAge(createdAt: number | null | undefined): string {
 function buildReportPrompt(
   t: ReportTokenInput,
   securitySummary?: string,
+  distributionSummary?: string,
   lang: AgentLang = "en",
 ): string {
   const lines = [
@@ -756,6 +760,9 @@ function buildReportPrompt(
   if (securitySummary) {
     lines.push(``, securitySummary);
   }
+  if (distributionSummary) {
+    lines.push(``, distributionSummary);
+  }
   lines.push(
     ``,
     `section guidance:`,
@@ -763,8 +770,12 @@ function buildReportPrompt(
     `- ## market: 3-5 bullet points (use "- ") on traction: volume relative to liquidity, momentum across 1h vs 24h, holder count, and market-cap / liquidity ratio (thin float = dump risk).`,
     `- ## risk: 3-5 bullet points (use "- ") on risk: liquidity depth, token age (newer = riskier), and holder concentration — call moralis_token_holders for this contract on base if it helps assess whether the top holder dominates supply.` +
       (securitySummary
-        ? ` also factor in the goplus security data above — honeypot, buy/sell taxes, mintable/pausable/reclaimable ownership, and owner/top-holder concentration are major red flags. mention anything notable.`
-        : ` note that automated security data was unavailable.`),
+        ? ` also factor in the gmgn contract-security data above — unrenounced ownership and any critical/high severity findings (honeypot, blocked sells, blacklist, high trading taxes, unverified source) are major red flags. mention anything notable.`
+        : ` note that automated contract-security data was unavailable.`) +
+      (distributionSummary
+        ? ` factor in the gmgn holder-distribution data above too — high top-10 concentration, little/no locked liquidity, and a low burn are dump/rug risks.`
+        : ``) +
+      ` launchpad provenance is a mitigating signal: if this token was launched through a reputable launchpad's standard contract (virtuals, bankr, clanker, etc.), treat contract-level rug/honeypot risk as lower, since those templated launches remove owner mint/blacklist/hidden-fee backdoors — but note that this trusts the launchpad as an honest actor and does not remove market risk (thin liquidity, holder concentration, dumps).`,
     `- ## verdict: end with a bold line exactly like "**relative risk: low | medium | high**" (pick one), followed by a one-clause reason.`,
     `  risk calibration — be measured, not alarmist: reserve "high" for tokens that look probably scammy or shady (honeypot, very high buy/sell taxes, mintable/pausable/reclaimable ownership, a single wallet controlling most of supply, or similar hard red flags). ordinary speculative concerns like thin liquidity, young age, or modest volume are "low" or "medium", not "high". if nothing points to a scam, do not say "high".`,
     ``,
@@ -834,10 +845,14 @@ router.post("/tokens/report/stream", async (req, res): Promise<void> => {
   });
 
   const lang = normalizeAgentLang((body as { lang?: unknown }).lang);
-  const security = await getTokenSecuritySafe(body.tokenAddress);
+  const [security, distribution] = await Promise.all([
+    getTokenSecuritySafe(body.tokenAddress),
+    getTokenDistributionSafe(body.tokenAddress),
+  ]);
   const prompt = buildReportPrompt(
     body as ReportTokenInput,
     security ? summarizeSecurity(security) : undefined,
+    distribution ? summarizeDistribution(distribution) : undefined,
     lang,
   );
 
@@ -859,9 +874,11 @@ router.post("/tokens/report/stream", async (req, res): Promise<void> => {
   }
 });
 
-// Structured GoPlus token-security data for the report UI. Cached server-side
-// (5 min) so repeated panel renders and the report stream share one upstream
-// call. Returns null payload when GoPlus has no data for the contract.
+// GMGN token-security data for the report: severity-ranked contract-safety
+// findings (honeypot, blocked sells, blacklist, taxes, unverified source) plus
+// ownership-renounced. Cached server-side (5 min) so repeated panel renders and
+// the report stream share one upstream call. Returns a null payload when GMGN
+// has no data for the contract or is not connected / the protocol is disabled.
 router.get("/tokens/security", async (req, res): Promise<void> => {
   const address = String(req.query.address ?? "");
   if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
@@ -880,7 +897,35 @@ router.get("/tokens/security", async (req, res): Promise<void> => {
     const security = await getTokenSecurity(address);
     res.json({ security });
   } catch (err) {
-    req.log.error({ err }, "goplus security lookup failed");
+    req.log.error({ err }, "gmgn security lookup failed");
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(502).json({ error: message });
+  }
+});
+
+// Aggregate holder/distribution metrics from GMGN for the report UI. Returns
+// `{ distribution: null }` when GMGN is disabled, the user has no key, or no
+// useful data comes back — the panel just omits itself. Never errors on
+// missing data (only on a thrown bug), mirroring the security panel.
+router.get("/tokens/distribution", async (req, res): Promise<void> => {
+  const address = String(req.query.address ?? "");
+  if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    res.status(400).json({ error: "valid token address is required" });
+    return;
+  }
+  const rate = take(getCurrentUserId(), "security");
+  if (!rate.allowed) {
+    res.setHeader("Retry-After", String(rate.retryAfterSec));
+    res
+      .status(429)
+      .json({ error: "rate limit exceeded", retryAfterSec: rate.retryAfterSec });
+    return;
+  }
+  try {
+    const distribution = await getTokenDistributionSafe(address);
+    res.json({ distribution });
+  } catch (err) {
+    req.log.error({ err }, "gmgn distribution lookup failed");
     const message = err instanceof Error ? err.message : "Unknown error";
     res.status(502).json({ error: message });
   }

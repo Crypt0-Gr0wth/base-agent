@@ -10,7 +10,7 @@ import {
   purgeAnonOAuthState,
 } from "../lib/base-mcp";
 import { getActiveUserId, runWithUser } from "../lib/request-context";
-import { upsertUserByWallet } from "../lib/user";
+import { upsertUserByWallet, getWalletForUser } from "../lib/user";
 import { hydrateUserSettings, setBaseMcpSession } from "../lib/settings";
 import { seedDefaultActionsIfEmpty } from "../lib/seed-defaults";
 import { seedNativeWorkflows } from "../lib/workflows";
@@ -19,6 +19,10 @@ import {
   buildClearAnonCookie,
   signSession,
   SESSION_TTL_SECONDS,
+  verifyBindToken,
+  buildClearBindCookie,
+  readCookie,
+  LOGIN_BIND_COOKIE_NAME,
 } from "../lib/session";
 
 const ANON_PREFIX = "anon:";
@@ -144,8 +148,23 @@ router.get("/base-mcp/callback", async (req, res): Promise<void> => {
     return;
   }
   const anonIdOnEntry = currentAnonId();
+  // Telegram one-tap login carries a signed bind cookie naming the owner's
+  // userId. Only honor it when its anonId matches THIS flow's anon id — that
+  // proves it was issued by /telegram/connect (which enforced single-use) for
+  // this exact flow, so a leaked link can't be replayed straight to the
+  // callback and a stale bind cookie can't hijack a different OAuth flow.
+  const boundRaw = anonIdOnEntry
+    ? verifyBindToken(readCookie(req.headers.cookie, LOGIN_BIND_COOKIE_NAME))
+    : null;
+  const bound =
+    boundRaw && boundRaw.anonId === anonIdOnEntry ? boundRaw : null;
   try {
     await finishAuthFlow(code, state);
+
+    // True only when this OAuth flow created a brand-new wallet-keyed user
+    // (first-ever sign-up). The opener uses it to land first-time users on the
+    // bunnyDS page instead of home.
+    let isNewUser = false;
 
     // If this OAuth flow was bootstrapped anonymously (the visitor wasn't
     // signed in when they clicked "connect base account"), derive their
@@ -165,13 +184,58 @@ router.get("/base-mcp/callback", async (req, res): Promise<void> => {
       } catch (err) {
         req.log.warn({ err }, "get_wallets failed during anon → user upgrade");
       }
+
+      // Telegram one-tap path: bind to the pre-set owner userId. The user row
+      // already exists (they configured their bot), so we do NOT upsert by
+      // wallet — that would re-key the account on whatever wallet they happened
+      // to authorize. Fall back to their stored wallet for the session addr
+      // when get_wallets didn't return one.
+      if (bound) {
+        const boundUserId = bound.uid;
+        const addr = (
+          address ??
+          (await getWalletForUser(boundUserId)) ??
+          ""
+        ).toLowerCase();
+        await migrateAnonOAuthToUser(anonIdOnEntry, boundUserId, async (s) => {
+          await runWithUser(boundUserId, async () => {
+            await hydrateUserSettings(boundUserId);
+            await setBaseMcpSession(s);
+            try {
+              await seedDefaultActionsIfEmpty(boundUserId);
+            } catch (err) {
+              req.log.warn(
+                { err, userId: boundUserId },
+                "seed default actions failed",
+              );
+            }
+            await seedNativeWorkflows(boundUserId);
+          });
+        });
+        const sessionCookie = signSession(boundUserId, addr);
+        res.setHeader("Set-Cookie", [
+          buildSetCookie(sessionCookie, SESSION_TTL_SECONDS),
+          buildClearAnonCookie(),
+          buildClearBindCookie(),
+        ]);
+        // The phone browser opened from Telegram has no opener window to
+        // postMessage to, so show a plain "return to Telegram" confirmation.
+        res.send(
+          `<html><body style="font-family:system-ui,sans-serif;text-align:center;padding:48px 24px;color:#111"><h2>✅ base wallet connected</h2><p>you can close this tab and head back to Telegram — your bunny bot now has wallet access.</p></body></html>`,
+        );
+        return;
+      }
+
+      // Web popup path (no bind cookie): mint/lookup a wallet-keyed user.
       if (!address) {
         throw new Error(
           "Could not determine your wallet address from Base. Try again or open the popup directly.",
         );
       }
       const lower = address.toLowerCase();
-      const userId = await upsertUserByWallet(lower);
+      const upserted = await upsertUserByWallet(lower);
+      const userId = upserted.userId;
+      isNewUser = upserted.isNew;
       await migrateAnonOAuthToUser(anonIdOnEntry, userId, async (s) => {
         await runWithUser(userId, async () => {
           await hydrateUserSettings(userId);
@@ -194,15 +258,19 @@ router.get("/base-mcp/callback", async (req, res): Promise<void> => {
     }
 
     res.send(
-      `<html><body><script>window.opener?.postMessage({type:"base-mcp-auth",ok:true},"*");window.close();</script>Connected. You can close this window.</body></html>`,
+      `<html><body><script>window.opener?.postMessage({type:"base-mcp-auth",ok:true,isNew:${isNewUser ? "true" : "false"}},"*");window.close();</script>Connected. You can close this window.</body></html>`,
     );
   } catch (err) {
     // Half-finished anon flows leave OAuth tokens + an MCP client in memory;
     // purge them so the next "connect" attempt starts clean. Also clear the
-    // bunny_anon cookie so a fresh anon id is minted next time.
+    // bunny_anon (and any telegram bind) cookie so a fresh anon id is minted
+    // next time.
     if (anonIdOnEntry) {
       purgeAnonOAuthState(anonIdOnEntry);
-      res.setHeader("Set-Cookie", buildClearAnonCookie());
+      res.setHeader("Set-Cookie", [
+        buildClearAnonCookie(),
+        buildClearBindCookie(),
+      ]);
     }
     const message = err instanceof Error ? err.message : "Unknown error";
     req.log.error({ err }, "Base MCP callback failed");

@@ -15,6 +15,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Download, Loader2, Play, Plus, Trash2, Upload } from "lucide-react";
 import { playSound } from "@/lib/sound";
+import { PageHeader } from "@/components/PageHeader";
 import { useT, type TFn } from "@/i18n";
 
 interface ActionDraft {
@@ -321,7 +322,12 @@ export function ActionsBuilderView() {
 
 
   return (
-    <div className="flex-1 flex flex-col md:flex-row w-full min-h-0">
+    <div className="flex-1 flex flex-col min-h-0 bg-background">
+      <PageHeader
+        title={t("actionsBuilder.actionsBuilderTitle")}
+        subtitle={t("actionsBuilder.subtitle")}
+      />
+      <div className="flex-1 flex flex-col md:flex-row w-full min-h-0">
       <div
         className={`w-full md:w-[280px] shrink-0 border-b md:border-b-0 md:border-r border-border flex-col bg-background ${
           editing ? "hidden md:flex" : "flex"
@@ -481,6 +487,7 @@ export function ActionsBuilderView() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

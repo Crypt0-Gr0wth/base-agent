@@ -1,7 +1,8 @@
 import { db, workflowsTable, type WorkflowRow } from "@workspace/db";
 import { eq, and, notInArray } from "drizzle-orm";
 import { logger } from "./logger";
-import { hydrateUserSettings, getApiKey, getLang } from "./settings";
+import { hydrateUserSettings, getLang } from "./settings";
+import { getActiveApiKey, getActiveProvider } from "./llm-provider";
 import { getCurrentUserId } from "./user";
 import { runWithUser } from "./request-context";
 import { OPENROUTER_HTTP_REFERER, OPENROUTER_APP_TITLE } from "./app-meta";
@@ -11,8 +12,8 @@ import {
   callOpenRouter,
   getMcpToolsForOpenRouter,
   getCurrentModelId,
-  FALLBACK_MODELS,
   languageDirective,
+  languageReminder,
   type OpenRouterTool,
   type Msg,
 } from "./bunny-agent";
@@ -21,6 +22,8 @@ import {
   listRecentActionsBySource,
   type TokenRef,
 } from "./actions";
+import { getContext } from "./memory";
+import { getLiveContext } from "./live-context";
 import { NATIVE_ACTIONS } from "./native-actions";
 
 // ---------- Public types ----------
@@ -203,13 +206,15 @@ Hard rules:
 - Prefer percentages over absolute dollar amounts in your trigger reasoning and thresholds. When a threshold could be expressed either way, use a percentage (share of wallet value, relative apy gap in percentage points, % price move) rather than a fixed dollar figure like "$200".
 - Default trade size: whenever executeInstructions needs an amount and the user's own action instructions do NOT specify one, use 1 USDC (or 1 unit of the relevant asset). Always keep it at 1 — the user will adjust the amount themselves before executing. Never invent a larger default.
 - emit_alert severity "critical" is reserved for genuine risk (liquidation, exploit, account compromise). Default to "info".
+- Do NOT use emoji anywhere — not in title, summary, why, or executeInstructions. Plain text only.
+- You may use light markdown in the BODY text (emit_alert.summary and emit_recommendation.why): **bold**, *italic*, \`code\`, bullet lists (lines starting with "- "), and [links](https://example.com). Keep it sparing and purposeful. Titles and executeInstructions must stay plain text with no markdown.
 - Whenever a finding is about specific token(s), populate the \`tokens\` array with each token's symbol and contract address (CA) using the exact address from the tool data. Never fabricate an address; omit a token rather than guess.
 - If a tool errors or returns nothing useful, do NOT invent data. Either emit a low-severity alert noting the failure, or stop silently if it's transient.
 - You are budget-limited: do the minimum tool calls needed, then emit and stop.
 - After emitting, end your turn with a brief one-line note (not shown to the user — only logged) describing what you did. Do not chat.
 `.trim();
 
-const MAX_TOOL_ROUNDS = 8;
+const MAX_TOOL_ROUNDS = 25;
 
 // Hard backend denylist for the actions runner. Even if a user puts a write
 // tool in toolAllowlist (or leaves allowlist = null = all), these names are
@@ -283,13 +288,13 @@ ${lines.join("\n")}
 
 async function executeWorkflow(row: WorkflowRow): Promise<RunResult> {
   const ranAt = new Date().toISOString();
-  const apiKey = getApiKey();
+  const apiKey = getActiveApiKey();
   if (!apiKey) {
     return {
       ranAt,
       status: "error",
       emitted: [],
-      error: "OpenRouter API key not configured",
+      error: `${getActiveProvider().label} API key not configured`,
     };
   }
 
@@ -337,18 +342,30 @@ async function executeWorkflow(row: WorkflowRow): Promise<RunResult> {
   // args (title/why/summary) the model writes will follow this directive, so
   // recommendations/alerts land in the inbox already localized. Runs inside the
   // scheduler's runWithUser() + hydrated settings, so getLang() is safe here.
+  //
+  // Inject the same memory context the interactive chat gets (runBunny /
+  // streamBunny): the user-authored memory blob plus the derived live context
+  // (connected wallet + recent trades). Without this the scheduled-actions
+  // agent ran "memory-blind" and never knew the user's wallet address.
+  const memoryContext = getContext();
+  const liveContext = await getLiveContext();
   const messages: Msg[] = [
-    { role: "system", content: SYSTEM_PROMPT + languageDirective(getLang()) },
+    {
+      role: "system",
+      content: `${SYSTEM_PROMPT}${languageDirective(getLang())}\n\n${memoryContext}${
+        liveContext ? `\n${liveContext}` : ""
+      }`,
+    },
     {
       role: "user",
-      content: `Action name: ${row.name || "(unnamed)"}\n\nInstructions from the user:\n${instructions}\n${recentBlock}\nRun now. Gather what you need, emit any warranted alerts or recommendations, then stop.`,
+      content: `Action name: ${row.name || "(unnamed)"}\n\nInstructions from the user:\n${instructions}\n${recentBlock}\nRun now. Gather what you need, emit any warranted alerts or recommendations, then stop.${languageReminder(getLang())}`,
     },
   ];
 
   const referer = buildReferer();
   const ctx = newAgentTurnCtx();
   const tried = new Set<string>();
-  const candidates = [getCurrentModelId(), ...FALLBACK_MODELS];
+  const candidates = [getCurrentModelId(), ...getActiveProvider().fallbackModels];
   let lastNote = "";
 
   for (const model of candidates) {
@@ -365,7 +382,7 @@ async function executeWorkflow(row: WorkflowRow): Promise<RunResult> {
         modelOk = false;
         logger.warn(
           { actionId: row.id, model, status: result.status },
-          "action runner: openrouter call failed, trying next model",
+          "action runner: llm call failed, trying next model",
         );
         break;
       }
@@ -500,8 +517,8 @@ async function executeWorkflow(row: WorkflowRow): Promise<RunResult> {
         status: "error",
         emitted,
         error: lastErr
-          ? `openrouter ${lastErr.status}: ${lastErr.text.slice(0, 300)}`
-          : "openrouter call failed",
+          ? `llm ${lastErr.status}: ${lastErr.text.slice(0, 300)}`
+          : "llm call failed",
       };
     }
   }
@@ -554,9 +571,11 @@ function nativeId(userId: string, key: string): string {
 // upserts each time.
 const seededUsers = new Set<string>();
 
-// Upsert the native starter pack into a user's workflows. Inserts run enabled
-// (native ships on by default); re-seeds refresh the code-owned definition
-// fields but deliberately leave `enabled` alone so a user's toggle sticks.
+// Upsert the native starter pack into a user's workflows. Inserts use each
+// action's `enabledByDefault` (defaults to true) so discovery/trade-suggesting
+// actions ship off and only the read-only daily summary ships on; re-seeds
+// refresh the code-owned definition fields but deliberately leave `enabled`
+// alone so a user's toggle sticks.
 export async function seedNativeWorkflows(userId: string): Promise<void> {
   if (seededUsers.has(userId)) return;
   try {
@@ -568,7 +587,7 @@ export async function seedNativeWorkflows(userId: string): Promise<void> {
           userId,
           name: def.name,
           source: "native",
-          enabled: true,
+          enabled: def.enabledByDefault ?? true,
           intervalMs: normalizeInterval(def.intervalMs),
           instructions: def.instructions,
           toolAllowlist: def.toolAllowlist,

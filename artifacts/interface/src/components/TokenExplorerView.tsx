@@ -1,16 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import {
-  ArrowDown,
-  ArrowUp,
-  Download,
-  Info,
-  Loader2,
-  RefreshCw,
-  Share2,
-  X,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, Info, Loader2, RefreshCw, SlidersHorizontal, X } from "lucide-react";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,17 +11,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { useTabs } from "./TabsContext";
 import { useAppStore } from "@/lib/store";
-import { fmtUsd, fmtPct, fmtNum, ageDays, fmtAge } from "./report/format";
-import {
-  deriveSecurityItems,
-  type Tone,
-  type TokenSecurity,
-} from "./report/security";
-import { Markdown } from "./report/Markdown";
-import type { ChartPoint, ReportData } from "./report/types";
-import { useT, useLang } from "@/i18n";
+import { useChat } from "./ChatContextDef";
+import { fmtUsd, fmtPct, ageDays, fmtAge } from "./report/format";
+import { useT } from "@/i18n";
+import { useTheme } from "@/theme";
 
 type TrendingToken = {
   tokenAddress: string;
@@ -45,15 +31,6 @@ type TrendingToken = {
   pricePercentChange24h: number | null;
   totalVolume24h: number | null;
 };
-
-type StreamEvent =
-  | { type: "model"; model: string }
-  | { type: "thinking" }
-  | { type: "tool_call"; id: string; name: string; args: unknown }
-  | { type: "tool_result"; id: string; name: string; content: string; isError?: boolean }
-  | { type: "content"; delta: string }
-  | { type: "done"; model: string; response: string }
-  | { type: "error"; message: string };
 
 type SortKey =
   | "marketCap"
@@ -173,473 +150,10 @@ const COLUMNS: Array<{ key: SortKey; labelKey: string }> = [
   { key: "totalVolume24h", labelKey: "col24hVol" },
   { key: "pricePercentChange1h", labelKey: "col1h" },
   { key: "pricePercentChange24h", labelKey: "col24h" },
-  { key: "holders", labelKey: "colHolders" },
   { key: "createdAt", labelKey: "colAge" },
 ];
 
-const TONE_CLASS: Record<Tone, string> = {
-  ok: "border-border text-muted-foreground",
-  warn: "border-border text-muted-foreground",
-  bad: "border-border text-destructive",
-  muted: "border-border text-muted-foreground",
-};
-
-function SecurityBadges({ s }: { s: TokenSecurity }) {
-  const t = useT();
-  const items = deriveSecurityItems(s);
-
-  return (
-    <div className="mb-3">
-      <div className="mb-1.5 flex items-center justify-between">
-        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-          {t("tokens.contractSecurity")}
-        </span>
-        <span className="font-mono text-[9px] text-muted-foreground">
-          {t("tokens.viaGoplus")}
-        </span>
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {items.map((it) => (
-          <span
-            key={it.label}
-            className={cn(
-              "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px]",
-              TONE_CLASS[it.tone],
-            )}
-          >
-            <span className="opacity-70">{it.label}</span>
-            <span className="font-medium">{it.value}</span>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TokenReportPanel({
-  token,
-  onClose,
-  onBuy,
-}: {
-  token: TrendingToken;
-  onClose?: () => void;
-  onBuy: (token: TrendingToken) => void;
-}) {
-  const t = useT();
-  const { lang } = useLang();
-  const [text, setText] = useState("");
-  const [status, setStatus] = useState<"streaming" | "done" | "error">(
-    "streaming",
-  );
-  const [errorMsg, setErrorMsg] = useState("");
-  // Captured once when the report completes, then reused for both the on-screen
-  // header and the PDF so they always show the same "generated" time.
-  const [generatedAt, setGeneratedAt] = useState<Date | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const { data: security } = useQuery({
-    queryKey: ["/api/tokens/security", token.tokenAddress],
-    queryFn: async (): Promise<TokenSecurity | null> => {
-      const r = await fetch(
-        `/api/tokens/security?address=${token.tokenAddress}`,
-      );
-      // Throw on failure so it surfaces as a query error (and gets retried)
-      // instead of being cached as a permanent "no data" success.
-      if (!r.ok) throw new Error(`security ${r.status}`);
-      const j = (await r.json()) as { security?: TokenSecurity | null };
-      return j.security ?? null;
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-
-  // Daily price/volume candles for the static chart embedded in the PDF. The
-  // on-screen chart is a GeckoTerminal iframe (can't go in a PDF), so the PDF
-  // draws its own SVG chart from this CoinGecko data. Best-effort: an empty
-  // array just omits the chart from the report.
-  const { data: chart } = useQuery({
-    queryKey: ["/api/tokens/chart", token.tokenAddress],
-    queryFn: async (): Promise<ChartPoint[]> => {
-      const r = await fetch(`/api/tokens/chart?address=${token.tokenAddress}`);
-      if (!r.ok) return [];
-      const j = (await r.json()) as { chart?: ChartPoint[] };
-      return j.chart ?? [];
-    },
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-
-  useEffect(() => {
-    const abort = new AbortController();
-    abortRef.current = abort;
-    setText("");
-    setStatus("streaming");
-    setErrorMsg("");
-    setGeneratedAt(null);
-
-    // Only an explicit `done` event marks the report complete (which gates the
-    // PDF/share actions). A stream that ends without it — network drop, proxy
-    // timeout, upstream abort — must NOT be treated as a finished report.
-    let sawDone = false;
-    let sawError = false;
-
-    const processChunk = (chunk: string) => {
-      const dataLine = chunk.split("\n").find((l) => l.startsWith("data:"));
-      if (!dataLine) return;
-      const data = dataLine.slice(5).trim();
-      if (!data) return;
-      let ev: StreamEvent;
-      try {
-        ev = JSON.parse(data) as StreamEvent;
-      } catch {
-        return;
-      }
-      if (ev.type === "content") {
-        setText((t) => t + ev.delta);
-      } else if (ev.type === "done") {
-        if (ev.response) setText(ev.response);
-        sawDone = true;
-        setGeneratedAt(new Date());
-        setStatus("done");
-      } else if (ev.type === "error") {
-        sawError = true;
-        setErrorMsg(ev.message);
-        setStatus("error");
-      }
-    };
-
-    (async () => {
-      try {
-        const resp = await fetch("/api/tokens/report/stream", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            tokenAddress: token.tokenAddress,
-            symbol: token.symbol,
-            name: token.name,
-            usdPrice: token.usdPrice,
-            marketCap: token.marketCap,
-            liquidityUsd: token.liquidityUsd,
-            holders: token.holders,
-            createdAt: token.createdAt,
-            pricePercentChange1h: token.pricePercentChange1h,
-            pricePercentChange24h: token.pricePercentChange24h,
-            totalVolume24h: token.totalVolume24h,
-            lang,
-          }),
-          signal: abort.signal,
-        });
-        if (resp.status === 429) {
-          setErrorMsg(t("tokens.rateLimitReached"));
-          setStatus("error");
-          return;
-        }
-        if (!resp.ok || !resp.body) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const reader = resp.body.getReader();
-        const decoder = new TextDecoder();
-        let buf = "";
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            buf += decoder.decode();
-            if (buf.trim()) processChunk(buf);
-            break;
-          }
-          buf += decoder.decode(value, { stream: true });
-          let idx: number;
-          while ((idx = buf.indexOf("\n\n")) !== -1) {
-            const c = buf.slice(0, idx);
-            buf = buf.slice(idx + 2);
-            processChunk(c);
-          }
-        }
-        if (sawDone) {
-          setStatus("done");
-        } else if (!sawError) {
-          // Stream ended without a terminal `done` event — the report is
-          // truncated. Surface it as an error so PDF/share stay disabled.
-          setErrorMsg(t("tokens.reportEndedEarly"));
-          setStatus("error");
-        }
-      } catch (err) {
-        if (abort.signal.aborted) return;
-        setErrorMsg(err instanceof Error ? err.message : String(err));
-        setStatus("error");
-      }
-    })();
-
-    return () => abort.abort();
-  }, [token, lang]);
-
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [text]);
-
-  const [pdfBusy, setPdfBusy] = useState<"idle" | "download" | "share">("idle");
-  const [pdfError, setPdfError] = useState("");
-  const ready = status === "done" && text.trim() !== "";
-
-  const buildReportData = (): ReportData => ({
-    token,
-    security: security ?? null,
-    analysis: text,
-    chart: chart ?? [],
-    generatedAt: generatedAt ?? new Date(),
-  });
-
-  const handleDownload = async () => {
-    if (!ready || pdfBusy !== "idle") return;
-    setPdfBusy("download");
-    setPdfError("");
-    try {
-      const { downloadReportPdf } = await import("./report/ReportPdf");
-      await downloadReportPdf(buildReportData());
-    } catch {
-      setPdfError(t("tokens.pdfGenerateError"));
-    } finally {
-      setPdfBusy("idle");
-    }
-  };
-
-  const handleShare = async () => {
-    if (!ready || pdfBusy !== "idle") return;
-    setPdfBusy("share");
-    setPdfError("");
-    try {
-      const { shareReportPdf, downloadReportPdf } = await import("./report/ReportPdf");
-      const data = buildReportData();
-      const shared = await shareReportPdf(data);
-      if (!shared) await downloadReportPdf(data);
-    } catch {
-      setPdfError(t("tokens.pdfShareError"));
-    } finally {
-      setPdfBusy("idle");
-    }
-  };
-
-  const stats: { id: string; label: string; value: string; tone?: "up" | "down" }[] = [
-    { id: "price", label: t("tokens.colPrice"), value: fmtUsd(token.usdPrice) },
-    { id: "mktCap", label: t("tokens.colMktCap"), value: fmtUsd(token.marketCap, true) },
-    { id: "liquidity", label: t("tokens.colLiquidity"), value: fmtUsd(token.liquidityUsd, true) },
-    { id: "vol24h", label: t("tokens.stat24hOnchainVol"), value: fmtUsd(token.totalVolume24h, true) },
-    { id: "holders", label: t("tokens.colHolders"), value: fmtNum(token.holders) },
-    { id: "age", label: t("tokens.colAge"), value: fmtAge(token.createdAt) },
-    {
-      id: "change1h",
-      label: t("tokens.col1h"),
-      value: fmtPct(token.pricePercentChange1h),
-      tone:
-        token.pricePercentChange1h == null
-          ? undefined
-          : token.pricePercentChange1h >= 0
-            ? "up"
-            : "down",
-    },
-    {
-      id: "change24h",
-      label: t("tokens.col24h"),
-      value: fmtPct(token.pricePercentChange24h),
-      tone:
-        token.pricePercentChange24h == null
-          ? undefined
-          : token.pricePercentChange24h >= 0
-            ? "up"
-            : "down",
-    },
-  ];
-
-  return (
-    <div className="flex h-full flex-col border-l border-border bg-background">
-      <div className="flex items-start justify-between gap-2 border-b border-border/50 px-4 py-3 shrink-0">
-        <div className="flex items-start gap-2 min-w-0">
-          <TokenAvatar logo={token.logo} symbol={token.symbol} size="md" />
-          <div className="min-w-0">
-            <div className="font-sans text-sm font-medium truncate">
-              {token.symbol || "?"}
-              {token.name ? (
-                <span className="text-muted-foreground font-normal">
-                  {" "}
-                  · {token.name}
-                </span>
-              ) : null}
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground truncate">
-              {token.tokenAddress}
-            </div>
-            <div className="font-mono text-[10px] text-muted-foreground">
-              {generatedAt
-                ? t("tokens.generatedAt", {
-                    time: generatedAt.toLocaleString("en-US", {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    }),
-                  })
-                : t("tokens.generating")}
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleDownload}
-            disabled={!ready || pdfBusy !== "idle"}
-            title={t("tokens.downloadPdf")}
-            aria-label={t("tokens.downloadPdf")}
-            className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/5 disabled:opacity-40 disabled:hover:bg-transparent"
-          >
-            {pdfBusy === "download" ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Download className="h-3 w-3" />
-            )}
-            {t("tokens.downloadPdf")}
-          </button>
-          <button
-            type="button"
-            onClick={handleShare}
-            disabled={!ready || pdfBusy !== "idle"}
-            title={t("tokens.share")}
-            aria-label={t("tokens.shareReport")}
-            className="inline-flex items-center gap-1.5 rounded border border-border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:text-foreground hover:bg-foreground/5 disabled:opacity-40 disabled:hover:bg-transparent"
-          >
-            {pdfBusy === "share" ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <Share2 className="h-3 w-3" />
-            )}
-            {t("tokens.share")}
-          </button>
-          <button
-            type="button"
-            onClick={() => onBuy(token)}
-            className="font-mono text-xs text-muted-foreground hover:text-foreground hover:underline px-1"
-          >
-            {t("tokens.buy")}
-          </button>
-          {onClose && (
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={t("tokens.closeReport")}
-              className="rounded p-1 text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="shrink-0 overflow-hidden border-b border-border/50">
-          <iframe
-            key={token.tokenAddress}
-            src={`https://www.geckoterminal.com/base/tokens/${token.tokenAddress}?embed=1&info=0&swaps=0&light_chart=1`}
-            title={t("tokens.chartTitle", {
-              symbol: token.symbol || token.tokenAddress,
-            })}
-            loading="lazy"
-            className="h-[390px] w-full border-0 bg-background"
-          />
-        </div>
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-          <div className="mb-4 grid grid-cols-4 gap-x-3 gap-y-3 rounded-md border border-border/60 bg-muted/30 p-3">
-            {stats.map((s) => (
-              <div key={s.label} className="min-w-0">
-                <div className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
-                  {s.label}
-                </div>
-                <div
-                  className={cn(
-                    "font-mono text-xs font-medium truncate",
-                    s.tone === "up" && "text-green",
-                    s.tone === "down" && "text-destructive",
-                    !s.tone && "text-foreground",
-                  )}
-                >
-                  {s.value}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {security && <SecurityBadges s={security} />}
-
-          {pdfError && (
-            <div className="mb-2 font-mono text-[10px] text-destructive">
-              {pdfError}
-            </div>
-          )}
-
-          {status === "error" ? (
-            <div className="font-mono text-xs text-destructive">
-              {t("tokens.errorPrefix")}: {errorMsg || t("tokens.failedToGenerateReport")}
-            </div>
-          ) : text ? (
-            <Markdown source={text} />
-          ) : (
-            <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span>{t("tokens.generatingReport")}</span>
-            </div>
-          )}
-          {status === "streaming" && text && (
-            <div className="mt-3 flex items-center gap-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              <Loader2 className="h-3 w-3 animate-spin" />
-              <span>{t("tokens.writing")}</span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Right-side panel placeholder while a shared (deep-linked) report is being
-// resolved, or when its token can't be hydrated. Keeps the same border/bg as
-// TokenReportPanel so the layout doesn't jump.
-function ReportPanelPlaceholder({
-  state,
-  address,
-}: {
-  state: "loading" | "missing";
-  address?: string | null;
-}) {
-  const t = useT();
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-2 border-l border-border bg-background px-6 text-center">
-      {state === "loading" ? (
-        <>
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          <div className="font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
-            {t("tokens.loadingSharedReport")}
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="font-mono text-xs text-destructive">
-            {t("tokens.couldntLoadReport")}
-          </div>
-          {address && (
-            <div className="font-mono text-[10px] text-muted-foreground break-all">
-              {address}
-            </div>
-          )}
-          <div className="font-mono text-[10px] text-muted-foreground">
-            {t("tokens.notBaseTokenOrUnavailable")}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-type Source = "moralis" | "virtuals" | "bankr";
+type Source = "coingecko" | "virtuals" | "bankr";
 
 // Per-source data provenance shown in the header info tooltip so users know
 // exactly where each list comes from and how it's filtered/enriched.
@@ -647,11 +161,11 @@ const METHODOLOGY: Record<
   Source,
   { title: string; source: string; filters: string; market: string }
 > = {
-  moralis: {
-    title: "methodologyMoralisTitle",
-    source: "methodologyMoralisSource",
-    filters: "methodologyMoralisFilters",
-    market: "methodologyMoralisMarket",
+  coingecko: {
+    title: "methodologyCoingeckoTitle",
+    source: "methodologyCoingeckoSource",
+    filters: "methodologyCoingeckoFilters",
+    market: "methodologyCoingeckoMarket",
   },
   virtuals: {
     title: "methodologyVirtualsTitle",
@@ -667,45 +181,187 @@ const METHODOLOGY: Record<
   },
 };
 
+// Side panel showing the selected token's live chart (GeckoTerminal embed) plus
+// a minimalist research button that hands the token to the agent chat.
+function ChartPanel({
+  token,
+  onClose,
+  onResearch,
+  t,
+}: {
+  token: TrendingToken;
+  onClose: () => void;
+  onResearch: () => void;
+  t: ReturnType<typeof useT>;
+}) {
+  const { theme } = useTheme();
+  // GeckoTerminal's embed is dark by default; `light_chart=1` forces light.
+  const chartTheme = theme === "dark" ? "" : "&light_chart=1";
+  return (
+    <div className="flex h-full min-h-0 flex-col bg-background">
+      <div className="flex shrink-0 items-center gap-2 border-b border-border/50 px-4 py-3">
+        <TokenAvatar logo={token.logo} symbol={token.symbol} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate font-mono text-sm font-medium text-foreground">
+            {token.symbol || `${token.tokenAddress.slice(0, 6)}…${token.tokenAddress.slice(-4)}`}
+          </div>
+          {token.name && (
+            <div className="truncate font-sans text-[10px] text-muted-foreground">
+              {token.name}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onResearch}
+          className="shrink-0 rounded border border-border px-2.5 py-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+        >
+          {t("tokens.researchAddress")}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={t("common.close")}
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <iframe
+          key={`${token.tokenAddress}-${theme}`}
+          src={`https://www.geckoterminal.com/base/tokens/${token.tokenAddress}?embed=1&info=0&swaps=0${chartTheme}`}
+          title={t("tokens.chartTitle", { symbol: token.symbol || token.tokenAddress })}
+          loading="lazy"
+          className="h-full min-h-[420px] w-full border-0 bg-background"
+        />
+      </div>
+    </div>
+  );
+}
+
 export function TokenExplorerView() {
   const t = useT();
-  const [source, setSource] = useState<Source>("moralis");
+  const [source, setSource] = useState<Source>("coingecko");
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS);
   const [sortKey, setSortKey] = useState<SortKey>("totalVolume24h");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const setChatOpen = useAppStore((s) => s.setChatOpen);
+  const { handleSubmit } = useChat();
+
+  // The token whose chart is shown in the side panel. Selecting a token (row
+  // click, search pick, pasted CA, or deep link) opens its chart; the panel's
+  // research button then hands it off to the agent chat.
   const [selected, setSelected] = useState<TrendingToken | null>(null);
-  const { tabs, setActive } = useTabs();
-  const setChatInput = useAppStore((s) => s.setChatInput);
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Deep link: /terminal/report/<address> opens this view focused on a given
-  // token. The shared token may not be in the trending list, so fetch its
-  // metadata by address to hydrate the report panel.
-  const [, reportParams] = useRoute("/terminal/report/:address");
-  const routeAddress = reportParams?.address ?? null;
-
-  const { data: sharedToken, status: sharedStatus } = useQuery({
-    queryKey: ["/api/tokens/by-address", routeAddress?.toLowerCase()],
-    enabled: !!routeAddress,
-    queryFn: async (): Promise<TrendingToken | null> => {
-      const r = await fetch(`/api/tokens/by-address?address=${routeAddress}`);
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const j = (await r.json()) as { token?: TrendingToken | null };
-      return j.token ?? null;
-    },
-    staleTime: Infinity,
-    refetchOnWindowFocus: false,
-    retry: 1,
-  });
-
-  const buyToken = (token: TrendingToken) => {
-    setChatInput(t("tokens.buyCommand", { address: token.tokenAddress }));
-    // Reveal a view that contains the chat input: on mobile chat is its own
-    // tab, on desktop it lives inside the home 3-column layout.
-    setActive(tabs.some((t) => t.id === "chat") ? "chat" : "home");
-    queueMicrotask(() => {
-      document.getElementById("chat-input")?.focus();
+  const selectAddress = (address: string) =>
+    setSelected({
+      tokenAddress: address,
+      symbol: "",
+      name: "",
+      logo: null,
+      usdPrice: null,
+      marketCap: null,
+      liquidityUsd: null,
+      holders: null,
+      createdAt: null,
+      pricePercentChange1h: null,
+      pricePercentChange24h: null,
+      totalVolume24h: null,
     });
+
+  // Hand the selected token off to the agent chat: open the chat and auto-send a
+  // research prompt so the report is produced in the conversation.
+  const researchInChat = (token: TrendingToken) => {
+    const cmd = token.symbol
+      ? t("tokens.researchCommand", {
+          symbol: token.symbol,
+          address: token.tokenAddress,
+        })
+      : t("tokens.researchCommandNoSymbol", { address: token.tokenAddress });
+    setChatOpen(true);
+    void handleSubmit(cmd);
   };
+
+  // Token search: find any Base token by name, ticker, or contract address
+  // instead of only clicking a row in the list. A 0x address opens its chart
+  // directly; free text hits /search and shows a dropdown of candidates.
+  const [caInput, setCaInput] = useState("");
+  const [caError, setCaError] = useState("");
+  const [searchResults, setSearchResults] = useState<TrendingToken[] | null>(
+    null,
+  );
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // Free-text name/ticker search → /api/tokens/search; shows a dropdown of
+  // candidates. Returns no results as a friendly error, preserves actionable
+  // backend messages (coingecko disabled, rate limit, …).
+  const runNameSearch = async (q: string) => {
+    setSearchLoading(true);
+    setSearchResults(null);
+    try {
+      const r = await fetch(`/api/tokens/search?q=${encodeURIComponent(q)}`);
+      if (!r.ok) {
+        const j = (await r.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(j?.error || `HTTP ${r.status}`);
+      }
+      const j = (await r.json()) as { tokens?: TrendingToken[] };
+      const list = j.tokens ?? [];
+      if (list.length === 0) {
+        setCaError(t("tokens.noSearchResults"));
+        setSearchResults(null);
+      } else {
+        setSearchResults(list);
+      }
+    } catch (err) {
+      setCaError(
+        err instanceof Error && err.message
+          ? err.message
+          : t("tokens.tokenNotFound"),
+      );
+      setSearchResults(null);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const submitCa = () => {
+    const q = caInput.trim();
+    if (!q) return;
+    setCaError("");
+    setSearchResults(null);
+
+    // A contract address opens its chart directly.
+    if (/^0x[0-9a-fA-F]{40}$/.test(q)) {
+      selectAddress(q);
+      setCaInput("");
+      return;
+    }
+
+    // Otherwise treat it as a name/ticker search.
+    void runNameSearch(q);
+  };
+
+  // Show the chart for a token picked from the search-results dropdown.
+  const pickSearchResult = (tok: TrendingToken) => {
+    setSearchResults(null);
+    setCaError("");
+    setSelected(tok);
+  };
+
+  // Deep link: /terminal/report/<address> opens the token's chart panel
+  // (once per address).
+  const [, reportParams] = useRoute("/terminal/report/:address");
+  const deepLinkFiredRef = useRef<string | null>(null);
+  useEffect(() => {
+    const addr = reportParams?.address;
+    if (addr && deepLinkFiredRef.current !== addr.toLowerCase()) {
+      deepLinkFiredRef.current = addr.toLowerCase();
+      selectAddress(addr);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportParams?.address]);
 
   const forceRef = useRef(false);
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery({
@@ -783,93 +439,59 @@ export function TokenExplorerView() {
     return filtered;
   }, [data, filters, sortKey, sortDir]);
 
-  const anyFilter = Object.values(filters).some((v) => v.trim() !== "");
-
-  // Resolve the deep-linked token: prefer a matching row (full metrics) and
-  // fall back to the by-address fetch. Auto-select it once per address so the
-  // report panel (desktop) and overlay (mobile) open straight to it.
-  const routeToken: TrendingToken | null = routeAddress
-    ? (rows.find(
-        (t) => t.tokenAddress.toLowerCase() === routeAddress.toLowerCase(),
-      ) ??
-      sharedToken ??
-      null)
-    : null;
-
-  const routeSelectedRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (
-      routeAddress &&
-      routeToken &&
-      routeSelectedRef.current !== routeAddress.toLowerCase()
-    ) {
-      routeSelectedRef.current = routeAddress.toLowerCase();
-      setSelected(routeToken);
-    }
-  }, [routeAddress, routeToken]);
-
-  // In deep-link mode the panel is driven *only* by the resolved route token
-  // (or a later user selection) — never the list's first row — so we don't
-  // start streaming a report for the wrong token while /api/tokens/by-address
-  // is still resolving.
-  const isDeepLink = !!routeAddress;
-  const reportToken = isDeepLink
-    ? (selected ?? routeToken)
-    : (selected ?? (rows.length > 0 ? rows[0] : null));
-  const deepLinkResolving = isDeepLink && !reportToken && sharedStatus === "pending";
-  const deepLinkMissing = isDeepLink && !reportToken && sharedStatus !== "pending";
+  const activeFilterCount = Object.values(filters).filter((v) => v.trim() !== "").length;
+  const anyFilter = activeFilterCount > 0;
 
   return (
     <div className="flex h-full w-full min-h-0">
       <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-background">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 shrink-0">
-          <div>
-            <div className="flex items-center gap-1.5">
-              <h2 className="font-sans text-sm font-medium">{t("tokens.researchBase")}</h2>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    aria-label={t("tokens.dataMethodology")}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Info className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="bottom"
-                  align="start"
-                  className="max-w-xs bg-popover text-popover-foreground border border-border shadow-md"
+        <PageHeader
+          title={t("tokens.researchBase")}
+          titleAfter={
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("tokens.dataMethodology")}
+                  className="text-muted-foreground hover:text-foreground"
                 >
-                  <div className="space-y-1.5 py-0.5 font-sans text-[11px] leading-snug">
-                    <p className="font-medium">{t(`tokens.${METHODOLOGY[source].title}`)}</p>
-                    <p>
-                      <span className="text-muted-foreground">{t("tokens.sourceLabel")} </span>
-                      {t(`tokens.${METHODOLOGY[source].source}`)}
-                    </p>
-                    <p>
-                      <span className="text-muted-foreground">{t("tokens.filtersLabel")} </span>
-                      {t(`tokens.${METHODOLOGY[source].filters}`)}
-                    </p>
-                    <p>
-                      <span className="text-muted-foreground">{t("tokens.marketDataLabel")} </span>
-                      {t(`tokens.${METHODOLOGY[source].market}`)}
-                    </p>
-                  </div>
-                </TooltipContent>
-              </Tooltip>
-            </div>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              {source === "bankr"
-                ? t("tokens.subtitleBankr")
-                : source === "virtuals"
-                  ? t("tokens.subtitleVirtuals")
-                  : t("tokens.subtitleMoralis")}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="flex items-center rounded border border-border p-0.5">
-              {(["moralis", "virtuals", "bankr"] as const).map((s) => (
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                align="start"
+                className="max-w-xs bg-popover text-popover-foreground border border-border shadow-md"
+              >
+                <div className="space-y-1.5 py-0.5 font-sans text-[11px] leading-snug">
+                  <p className="font-medium">{t(`tokens.${METHODOLOGY[source].title}`)}</p>
+                  <p>
+                    <span className="text-muted-foreground">{t("tokens.sourceLabel")} </span>
+                    {t(`tokens.${METHODOLOGY[source].source}`)}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">{t("tokens.filtersLabel")} </span>
+                    {t(`tokens.${METHODOLOGY[source].filters}`)}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">{t("tokens.marketDataLabel")} </span>
+                    {t(`tokens.${METHODOLOGY[source].market}`)}
+                  </p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          }
+          subtitle={
+            source === "bankr"
+              ? t("tokens.subtitleBankr")
+              : source === "virtuals"
+                ? t("tokens.subtitleVirtuals")
+                : t("tokens.subtitleCoingecko")
+          }
+          actions={
+            <>
+              <div className="flex items-center rounded border border-border p-0.5">
+              {(["coingecko", "virtuals"] as const).map((s) => (
                 <button
                   key={s}
                   type="button"
@@ -895,62 +517,164 @@ export function TokenExplorerView() {
               <RefreshCw className={cn("h-3 w-3 mr-1", isFetching && "animate-spin")} />
               {t("tokens.refresh")}
             </Button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         <div className="border-b border-border/50 px-4 py-3 shrink-0">
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-            <FilterField
-              label={t("tokens.filterMinLiq")}
-              value={filters.minLiquidity}
-              onChange={(v) => setFilter("minLiquidity", v)}
-              placeholder="0"
+          <div className="flex items-center gap-2">
+            <Input
+              value={caInput}
+              onChange={(e) => {
+                setCaInput(e.target.value);
+                if (caError) setCaError("");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submitCa();
+              }}
+              placeholder={t("tokens.searchPlaceholder")}
+              spellCheck={false}
+              autoCapitalize="none"
+              autoCorrect="off"
+              className="h-8 flex-1 font-mono text-xs"
             />
-            <FilterField
-              label={t("tokens.filterMin24hVol")}
-              value={filters.minVolume24h}
-              onChange={(v) => setFilter("minVolume24h", v)}
-              placeholder="0"
-            />
-            <FilterField
-              label={t("tokens.filterMinMktCap")}
-              value={filters.minMarketCap}
-              onChange={(v) => setFilter("minMarketCap", v)}
-              placeholder="0"
-            />
-            <FilterField
-              label={t("tokens.filterMinHolders")}
-              value={filters.minHolders}
-              onChange={(v) => setFilter("minHolders", v)}
-              placeholder="0"
-            />
-            <FilterField
-              label={t("tokens.filterMaxAge")}
-              value={filters.maxAgeDays}
-              onChange={(v) => setFilter("maxAgeDays", v)}
-              placeholder="∞"
-            />
-            <FilterField
-              label={t("tokens.filterMin1h")}
-              value={filters.min1hChange}
-              onChange={(v) => setFilter("min1hChange", v)}
-              placeholder="-100"
-            />
-            <FilterField
-              label={t("tokens.filterMin24h")}
-              value={filters.min24hChange}
-              onChange={(v) => setFilter("min24hChange", v)}
-              placeholder="-100"
-            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={submitCa}
+              disabled={searchLoading}
+              className="h-8 shrink-0 font-mono text-[11px] uppercase tracking-wider"
+            >
+              {searchLoading ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                t("tokens.searchAction")
+              )}
+            </Button>
           </div>
-          {anyFilter && (
+          <div className="mt-1.5 font-mono text-[10px] text-muted-foreground">
+            {t("tokens.researchHint")}
+          </div>
+          {caError && (
+            <div className="mt-1.5 font-mono text-[10px] text-destructive">
+              {caError}
+            </div>
+          )}
+          {searchResults && searchResults.length > 0 && (
+            <div className="mt-2 max-h-72 overflow-y-auto rounded-md border border-border/50 bg-card">
+              {searchResults.map((tok) => (
+                <button
+                  key={tok.tokenAddress}
+                  type="button"
+                  onClick={() => pickSearchResult(tok)}
+                  className="flex w-full items-center gap-2 border-b border-border/40 px-3 py-2 text-left last:border-b-0 hover:bg-muted/60"
+                >
+                  {tok.logo ? (
+                    <img
+                      src={tok.logo}
+                      alt=""
+                      className="h-6 w-6 shrink-0 rounded-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.visibility = "hidden";
+                      }}
+                    />
+                  ) : (
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted font-mono text-[10px] uppercase text-muted-foreground">
+                      {(tok.symbol || "?").slice(0, 2)}
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-xs font-medium uppercase">
+                        {tok.symbol || "—"}
+                      </span>
+                      <span className="truncate font-mono text-[10px] text-muted-foreground">
+                        {tok.name}
+                      </span>
+                    </div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      {fmtUsd(tok.usdPrice)} · {t("tokens.colLiquidity")} {fmtUsd(tok.liquidityUsd)}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="border-b border-border/50 px-4 py-2 shrink-0">
+          <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => setFilters(EMPTY_FILTERS)}
-              className="mt-2 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+              onClick={() => setFiltersOpen((o) => !o)}
+              className="inline-flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
             >
-              {t("tokens.clearFilters")}
+              <SlidersHorizontal className="h-3 w-3" />
+              <span>{t("tokens.filtersLabel")}</span>
+              {activeFilterCount > 0 && (
+                <span className="rounded-full bg-foreground/10 px-1.5 text-[9px] text-foreground">
+                  {activeFilterCount}
+                </span>
+              )}
+              <ChevronDown
+                className={cn("h-3 w-3 transition-transform", filtersOpen && "rotate-180")}
+              />
             </button>
+            {anyFilter && (
+              <button
+                type="button"
+                onClick={() => setFilters(EMPTY_FILTERS)}
+                className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+              >
+                {t("tokens.clearFilters")}
+              </button>
+            )}
+          </div>
+          {filtersOpen && (
+            <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              <FilterField
+                label={t("tokens.filterMinLiq")}
+                value={filters.minLiquidity}
+                onChange={(v) => setFilter("minLiquidity", v)}
+                placeholder="0"
+              />
+              <FilterField
+                label={t("tokens.filterMin24hVol")}
+                value={filters.minVolume24h}
+                onChange={(v) => setFilter("minVolume24h", v)}
+                placeholder="0"
+              />
+              <FilterField
+                label={t("tokens.filterMinMktCap")}
+                value={filters.minMarketCap}
+                onChange={(v) => setFilter("minMarketCap", v)}
+                placeholder="0"
+              />
+              <FilterField
+                label={t("tokens.filterMinHolders")}
+                value={filters.minHolders}
+                onChange={(v) => setFilter("minHolders", v)}
+                placeholder="0"
+              />
+              <FilterField
+                label={t("tokens.filterMaxAge")}
+                value={filters.maxAgeDays}
+                onChange={(v) => setFilter("maxAgeDays", v)}
+                placeholder="∞"
+              />
+              <FilterField
+                label={t("tokens.filterMin1h")}
+                value={filters.min1hChange}
+                onChange={(v) => setFilter("min1hChange", v)}
+                placeholder="-100"
+              />
+              <FilterField
+                label={t("tokens.filterMin24h")}
+                value={filters.min24hChange}
+                onChange={(v) => setFilter("min24hChange", v)}
+                placeholder="-100"
+              />
+            </div>
           )}
         </div>
 
@@ -1034,7 +758,7 @@ export function TokenExplorerView() {
                     key={t.tokenAddress}
                     onClick={() => setSelected(t)}
                     className={cn(
-                      "cursor-pointer border-b border-border/40 hover:bg-foreground/5",
+                      "border-b border-border/40 cursor-pointer hover:bg-foreground/5",
                       selected?.tokenAddress === t.tokenAddress && "bg-foreground/5",
                     )}
                   >
@@ -1079,9 +803,6 @@ export function TokenExplorerView() {
                     >
                       {fmtPct(t.pricePercentChange24h)}
                     </td>
-                    <td className="px-3 py-2 text-right font-mono text-xs text-foreground">
-                      {fmtNum(t.holders)}
-                    </td>
                     <td className="px-3 py-2 text-right font-mono text-xs text-muted-foreground">
                       {fmtAge(t.createdAt)}
                     </td>
@@ -1093,31 +814,25 @@ export function TokenExplorerView() {
         </div>
       </div>
 
-      {(reportToken || deepLinkResolving || deepLinkMissing) && (
-        <div className="w-[35%] min-w-[360px] shrink-0 hidden md:block">
-          {reportToken ? (
-            <TokenReportPanel token={reportToken} onBuy={buyToken} />
-          ) : (
-            <ReportPanelPlaceholder
-              state={deepLinkResolving ? "loading" : "missing"}
-              address={routeAddress}
-            />
-          )}
+      {selected && (
+        <div className="hidden lg:block lg:w-[480px] lg:shrink-0 lg:border-l lg:border-border/50">
+          <ChartPanel
+            token={selected}
+            onClose={() => setSelected(null)}
+            onResearch={() => researchInChat(selected)}
+            t={t}
+          />
         </div>
       )}
+
       {selected && (
-        <div className="fixed inset-0 z-50 md:hidden">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setSelected(null)}
+        <div className="fixed inset-0 z-50 bg-background lg:hidden">
+          <ChartPanel
+            token={selected}
+            onClose={() => setSelected(null)}
+            onResearch={() => researchInChat(selected)}
+            t={t}
           />
-          <div className="absolute inset-y-0 right-0 w-[90%] max-w-sm">
-            <TokenReportPanel
-              token={selected}
-              onClose={() => setSelected(null)}
-              onBuy={buyToken}
-            />
-          </div>
         </div>
       )}
     </div>

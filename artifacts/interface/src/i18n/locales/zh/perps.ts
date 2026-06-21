@@ -43,6 +43,10 @@ export default {
   spread: "点差",
   noMarkets: "暂无市场",
 
+  prepInChat: "在对话中准备",
+  prepCommand:
+    "给我做一个 {pair} 合约的交易准备：分析实时价格、未平仓量（多空对比）、资金费率和点差，然后给出方向性偏向、关键价位和风险。",
+
   taReport: "技术分析",
   taGenerating: "正在进行技术分析…",
   taWriting: "撰写中…",

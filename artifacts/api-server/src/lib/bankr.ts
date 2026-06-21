@@ -1,4 +1,5 @@
 import { logger } from "./logger";
+import { toToolText } from "./toon";
 
 const BANKR_BASE = "https://api.bankr.bot";
 
@@ -72,7 +73,7 @@ function trimToLast50(raw: string): string {
     return raw;
   }
   if (Array.isArray(parsed)) {
-    return JSON.stringify(parsed.slice(0, MAX_LAUNCHES));
+    return toToolText(parsed.slice(0, MAX_LAUNCHES));
   }
   if (parsed && typeof parsed === "object") {
     const obj = parsed as Record<string, unknown>;
@@ -80,7 +81,7 @@ function trimToLast50(raw: string): string {
       const v = obj[key];
       if (Array.isArray(v)) {
         obj[key] = v.slice(0, MAX_LAUNCHES);
-        return JSON.stringify(obj);
+        return toToolText(obj);
       }
     }
   }

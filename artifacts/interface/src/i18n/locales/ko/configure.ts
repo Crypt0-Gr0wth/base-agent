@@ -4,11 +4,16 @@ export default {
   tabLlm: "llm",
   tabServices: "서비스",
   tabMemory: "메모리",
-  keysIntroPrefix: "아래 두 키는 bunnyOS가 작동하는 데",
-  keysIntroRequired: "필수",
+  bunnyDsManaged: "bunnyDS가 관리 중. 끄면 자체 키를 사용할 수 있습니다",
+  keysIntroPrefix: "이 탭은 오픈소스 / 자체 키 사용 설정을 위한 것입니다.",
+  keysIntroRequired: "bunnyDS 관리",
   keysIntroSuffix:
-    "입니다. 모델과 에이전트가 분석하는 온체인 데이터를 잠금 해제합니다.",
+    " 페이지에서 bunnyOS 관리형 데이터 + 추론 게이트웨이를 대신 사용하세요.",
   requiredMark: "*필수",
+  llmGroupLabel: "추론 제공자",
+  llmGroupHint: "하나 선택",
+  orDivider: "또는",
+  useProvider: "사용",
   openrouterKeyLabel: "openrouter api 키",
   topUp: "$1 충전",
   getFreeKey: "무료 키 받기",
@@ -24,6 +29,26 @@ export default {
   coingeckoKeyLabel: "coingecko api 키",
   coingeckoHelp:
     "bunnyOS는 토큰 가격, 시장 데이터, 탐색에 이 키가 필요합니다. 무료 Demo 등급(카드 불필요) — 약 30 req/min, 월 10k req. 온체인 dex 조회를 포함한 모든 호출에 필수입니다.",
+  gmgnKeyLabel: "gmgn api 키",
+  gmgnHelp:
+    "선택 사항. 읽기 전용 meme/degen 인텔리전스를 활성화합니다 — 트렌딩, 트렌치, 토큰 보안, 스마트 머니 + kol 활동, 지갑 손익. gmgn.ai에서 무료 키를 발급받은 뒤 서비스 탭에서 gmgn을 켜세요. 읽기 전용이며 거래는 없습니다.",
+  zerionKeyLabel: "zerion api 키",
+  zerionHelp:
+    "선택 사항. base의 읽기 전용 지갑/포트폴리오 데이터 — 포트폴리오 개요, 포지션, 손익, 거래 내역, nft. 대시보드 용도로 moralis보다 저렴한 대안입니다. developers.zerion.io에서 키를 발급받은 뒤 서비스 탭에서 zerion을 켜세요. 읽기 전용입니다.",
+  surplusKeyLabel: "surplus intelligence api 키",
+  surplusHelp:
+    "openrouter의 선택적 대안. surplusintelligence.ai에서 발급받은 구매자 키(inf_...)를 붙여넣고 llm 탭에서 surplus를 제공자로 선택하세요.",
+  veniceKeyLabel: "venice api 키",
+  veniceHelp:
+    "base 기반의 프라이버시 중심, 무검열 추론. venice.ai/settings/api에서 발급받은 키(vk_...)를 붙여넣고 llm 탭에서 venice를 제공자로 선택하세요. 도구 호출을 지원하는 모델을 선택하세요.",
+  economyosKeyLabel: "economyos api 키",
+  economyosHelp:
+    "virtuals 컴퓨트 추론. compute.virtuals.io에서 발급받은 virtuals api 키를 붙여넣고 llm 탭에서 economyos를 제공자로 선택하세요. 도구 호출을 지원하는 모델을 선택하세요(예: deepseek-v4-flash).",
+  providerLabel: "추론 제공자",
+  providerOpenrouter: "openrouter",
+  providerSurplus: "surplus intelligence",
+  providerVenice: "venice",
+  providerEconomyos: "economyos (virtuals 프로토콜)",
   modelLabel: "모델",
   selectModel: "모델 선택",
   searchModels: "모델 검색...",

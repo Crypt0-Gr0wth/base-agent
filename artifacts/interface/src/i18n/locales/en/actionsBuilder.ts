@@ -18,6 +18,7 @@ export default {
   hoursAgo: "{n}h ago",
   daysAgo: "{n}d ago",
   actionsBuilderTitle: "actions builder",
+  subtitle: "create and manage actions that run 24/7.",
   builderIntro:
     "each action is a scoped agent that runs on a schedule. write what you want it to watch for, pick which tools it may call, and it will post alerts and one-click recommendations into your inbox.",
   pickActionBefore: "pick an action on the left to edit, or click",

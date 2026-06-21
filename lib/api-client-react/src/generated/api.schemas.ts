@@ -91,6 +91,23 @@ export interface ModelSelection {
   model: string;
 }
 
+export interface LlmProviderState {
+  /**
+     * Provider id from the registry (e.g. surplus, venice, economyos, openrouter). Validated server-side against the available providers, so new providers work with no schema change.
+     * @minLength 1
+     */
+  provider: string;
+}
+
+export interface LlmProviderInfo {
+  id: string;
+  label: string;
+}
+
+export interface LlmProviderListResponse {
+  providers: LlmProviderInfo[];
+}
+
 export interface BaseMcpStatus {
   connected: boolean;
   toolCount: number;

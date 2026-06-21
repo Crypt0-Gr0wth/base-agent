@@ -1,4 +1,5 @@
 import { useCallback, useRef } from "react";
+import { noteExplicitSound } from "@/lib/sound";
 
 type ClickVariant = "tap" | "drop";
 
@@ -10,6 +11,7 @@ export function useClickSound() {
 
   return useCallback((variant: ClickVariant = "tap") => {
     try {
+      noteExplicitSound();
       if (!ctxRef.current) {
         const Ctor =
           window.AudioContext ??

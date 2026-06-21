@@ -1,5 +1,7 @@
 export default {
   title: "chat",
+  openAgent: "open agent",
+  close: "close",
   newChat: "new chat",
   history: "history",
   savedChats: "saved chats",

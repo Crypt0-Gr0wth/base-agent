@@ -2,10 +2,12 @@ import app from "./app";
 import { reconnectIfAuthorized } from "./lib/base-mcp";
 import { registerAnonMcp, connectAllAnonMcps } from "./lib/mcp-anon";
 import { startWorkflowScheduler } from "./lib/workflows";
+import { startTelegramPoller } from "./lib/telegram-bot";
 import { ensureLocalUser, LOCAL_USER_ID } from "./lib/user";
 import { hydrateUserSettings } from "./lib/settings";
 import { runWithUser } from "./lib/request-context";
 import { migrateLegacyToolNames } from "./lib/migrate-tool-names";
+import { migrateNativeDefaults } from "./lib/migrate-native-defaults";
 import { logger } from "./lib/logger";
 
 registerAnonMcp({
@@ -25,6 +27,7 @@ async function start(): Promise<void> {
   await ensureLocalUser();
   await hydrateUserSettings(LOCAL_USER_ID);
   await migrateLegacyToolNames();
+  await migrateNativeDefaults();
 
   app.listen(port, (err) => {
     if (err) {
@@ -42,6 +45,7 @@ async function start(): Promise<void> {
       logger.warn({ err: e }, "Anon MCP connect failed"),
     );
     startWorkflowScheduler();
+    startTelegramPoller();
   });
 }
 

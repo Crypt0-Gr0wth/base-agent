@@ -1,0 +1,46 @@
+export default {
+  title: "bunny data services",
+  subtitle: "bunnyOS managed data + inference gateway",
+  loading: "loading status...",
+  statusActive: "bunnyDS active",
+  statusInactive: "bunnyDS off",
+  activeHelp:
+    "data and inference route through the bunnyOS managed gateway, metered against your wallet. connect below and set a USDC allowance.",
+  inactiveHelp:
+    "bunnyDS is off. data and inference use your own keys from the configure tab.",
+  toggleAria: "toggle bunnyDS",
+  saveFailed: "couldn't update bunnyDS, try again",
+  byoPrefix: "running open-source or bringing your own keys?",
+  byoLink: "configure",
+  byoSuffix: "your provider and api keys there.",
+  connectTitle: "connect your wallet",
+  connectedTitle: "wallet connected",
+  connectHelp:
+    "sign a message with your Base wallet to mint a bunnyDS session token. usage is billed to this wallet.",
+  connectedHelp:
+    "your wallet is connected to bunnyDS. usage is billed against the allowance below.",
+  connectButton: "connect wallet",
+  reconnect: "reconnect",
+  connecting: "waiting for signature...",
+  reopen: "reopen wallet",
+  connectFailed: "couldn't connect to bunnyDS, try again",
+  connectTimeout: "connect timed out — try again",
+  noApproval: "no wallet approval was returned, try again",
+  spendingTitle: "spending allowance",
+  spendingHelp:
+    "approve how much USDC bunnyDS may settle from your wallet. raise it any time.",
+  spendingLocked:
+    "bunnyDS metering isn't enabled on the gateway yet — it runs free, no allowance needed.",
+  spendingLimitLabel: "USDC allowance",
+  spendingUnit: "USDC",
+  spendingApprove: "approve allowance",
+  allowanceApproving: "submitting...",
+  allowanceSubmitted: "approve the allowance in your wallet",
+  allowanceFailed: "couldn't submit the allowance, try again",
+  allowanceInvalid: "enter a positive USDC amount",
+  billingAllowance: "allowance",
+  billingBalance: "balance",
+  billingOwed: "owed",
+  billingCredit: "credit",
+  billingNone: "—",
+} as const;

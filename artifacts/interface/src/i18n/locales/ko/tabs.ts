@@ -1,12 +1,18 @@
 export default {
   main: "메인",
   actionsBuilder: "액션 빌더",
+  builder: "빌더",
   actionsHistory: "액션 기록",
   research: "리서치",
   perps: "퍼프",
+  bunny: "bunnyEX",
+  bunnyds: "bunnyDS",
   baseMcp: "base mcp",
   wallet: "지갑",
   actionsInbox: "액션 받은편지함",
+  actionInbox: "액션",
+  inbox: "받은편지함",
+  history: "기록",
   chat: "채팅",
   close: "{title} 닫기",
 } as const;

@@ -10,6 +10,8 @@ export interface FeedEntry {
 interface AppState {
   chatInput: string;
   setChatInput: (val: string) => void;
+  chatOpen: boolean;
+  setChatOpen: (open: boolean) => void;
   feed: FeedEntry[];
   addFeedEntry: (entry: Omit<FeedEntry, 'id' | 'time'>) => void;
 }
@@ -17,6 +19,8 @@ interface AppState {
 export const useAppStore = create<AppState>((set) => ({
   chatInput: '',
   setChatInput: (chatInput) => set({ chatInput }),
+  chatOpen: false,
+  setChatOpen: (chatOpen) => set({ chatOpen }),
   feed: [],
   addFeedEntry: (entry) => set((state) => {
     const newEntry: FeedEntry = {

@@ -302,6 +302,236 @@ export const ClearCoingeckoKeyResponse = zod.object({
 
 
 /**
+ * @summary Get the GMGN API key configuration status
+ */
+export const GetGmgnKeyStatusResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Set the GMGN API key
+ */
+export const setGmgnKeyBodyApiKeyMin = 8;
+
+
+
+export const SetGmgnKeyBody = zod.object({
+  "apiKey": zod.string().min(setGmgnKeyBodyApiKeyMin)
+})
+
+export const SetGmgnKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Clear the user-provided GMGN API key
+ */
+export const ClearGmgnKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Get the Zerion API key configuration status
+ */
+export const GetZerionKeyStatusResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Set the Zerion API key
+ */
+export const setZerionKeyBodyApiKeyMin = 8;
+
+
+
+export const SetZerionKeyBody = zod.object({
+  "apiKey": zod.string().min(setZerionKeyBodyApiKeyMin)
+})
+
+export const SetZerionKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Clear the user-provided Zerion API key
+ */
+export const ClearZerionKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Get the Surplus Intelligence API key configuration status
+ */
+export const GetSurplusKeyStatusResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Set the Surplus Intelligence API key
+ */
+export const setSurplusKeyBodyApiKeyMin = 8;
+
+
+
+export const SetSurplusKeyBody = zod.object({
+  "apiKey": zod.string().min(setSurplusKeyBodyApiKeyMin)
+})
+
+export const SetSurplusKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Clear the user-provided Surplus Intelligence API key
+ */
+export const ClearSurplusKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Get the Venice API key configuration status
+ */
+export const GetVeniceKeyStatusResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Set the Venice API key
+ */
+export const setVeniceKeyBodyApiKeyMin = 8;
+
+
+
+export const SetVeniceKeyBody = zod.object({
+  "apiKey": zod.string().min(setVeniceKeyBodyApiKeyMin)
+})
+
+export const SetVeniceKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Clear the user-provided Venice API key
+ */
+export const ClearVeniceKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Get the EconomyOS API key configuration status
+ */
+export const GetEconomyosKeyStatusResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Set the EconomyOS API key
+ */
+export const setEconomyosKeyBodyApiKeyMin = 8;
+
+
+
+export const SetEconomyosKeyBody = zod.object({
+  "apiKey": zod.string().min(setEconomyosKeyBodyApiKeyMin)
+})
+
+export const SetEconomyosKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Clear the user-provided EconomyOS API key
+ */
+export const ClearEconomyosKeyResponse = zod.object({
+  "configured": zod.boolean(),
+  "userProvided": zod.boolean(),
+  "masked": zod.string()
+})
+
+
+/**
+ * @summary Get the active LLM inference provider
+ */
+
+
+
+export const GetLlmProviderResponse = zod.object({
+  "provider": zod.string().min(1).describe('Provider id from the registry (e.g. surplus, venice, economyos, openrouter). Validated server-side against the available providers, so new providers work with no schema change.')
+})
+
+
+/**
+ * @summary Set the active LLM inference provider
+ */
+
+
+
+export const SetLlmProviderBody = zod.object({
+  "provider": zod.string().min(1).describe('Provider id from the registry (e.g. surplus, venice, economyos, openrouter). Validated server-side against the available providers, so new providers work with no schema change.')
+})
+
+
+
+
+export const SetLlmProviderResponse = zod.object({
+  "provider": zod.string().min(1).describe('Provider id from the registry (e.g. surplus, venice, economyos, openrouter). Validated server-side against the available providers, so new providers work with no schema change.')
+})
+
+
+/**
+ * @summary List available LLM inference providers
+ */
+export const ListLlmProvidersResponse = zod.object({
+  "providers": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string()
+}))
+})
+
+
+/**
  * @summary Call an allow-listed Base MCP tool
  */
 export const CallBaseMcpToolBody = zod.object({

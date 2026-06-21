@@ -6,6 +6,9 @@ import {
   SESSION_COOKIE_NAME,
   ANON_SESSION_COOKIE_NAME,
   buildAnonCookie,
+  buildClearBindCookie,
+  verifyBindToken,
+  LOGIN_BIND_COOKIE_NAME,
 } from "../lib/session";
 import { runWithRequestContext } from "../lib/request-context";
 import { hydrateUserSettings } from "../lib/settings";
@@ -25,6 +28,10 @@ import { seedNativeWorkflows } from "../lib/workflows";
 // Everything else returns 401.
 
 const PUBLIC_PREFIXES = ["/auth/", "/healthz"];
+// Exact-match public paths. Kept separate from prefix matching so a route like
+// "/bunny/os-price" can't accidentally make a future "/bunny/os-price/..." child
+// route public via startsWith.
+const PUBLIC_EXACT = new Set(["/bunny/os-price"]);
 
 // Base-MCP endpoints that participate in the anon-OAuth bootstrap. Only the
 // two endpoints that actually drive the OAuth dance are allowed anonymously;
@@ -44,7 +51,7 @@ const ANON_FINISHES_FLOW = new Set(["/base-mcp/callback"]);
 
 function isPublicPath(p: string): boolean {
   // p is mounted under /api, so without the prefix
-  return PUBLIC_PREFIXES.some((pref) => p.startsWith(pref));
+  return PUBLIC_EXACT.has(p) || PUBLIC_PREFIXES.some((pref) => p.startsWith(pref));
 }
 
 // Derive the public origin from the request itself, honoring X-Forwarded-*
@@ -69,6 +76,58 @@ export function sessionMiddleware(
       const payload = verifySession(sessionCookie);
       const origin = originFromReq(req);
 
+      // Telegram one-tap Base login: /telegram/connect always runs in a fresh
+      // anon OAuth context (minting an anon id if absent) so the wallet binds to
+      // the Telegram owner, never to whoever is logged into this phone browser.
+      if (req.path === "/telegram/connect") {
+        let anonId = readCookie(cookieHeader, ANON_SESSION_COOKIE_NAME);
+        if (!anonId) {
+          anonId = randomBytes(16).toString("hex");
+          res.append("Set-Cookie", buildAnonCookie(anonId));
+        }
+        runWithRequestContext({ userId: `anon:${anonId}`, origin }, () =>
+          next(),
+        );
+        return;
+      }
+
+      // Telegram one-tap callback. Only force the anon OAuth context when the
+      // bind cookie is valid AND scoped to the anon flow id present — that is the
+      // only signal that /telegram/connect actually started this flow. A stale or
+      // mismatched bind cookie is cleared and ignored, so it can never divert an
+      // ordinary (authenticated or anon) web OAuth callback into the bind path —
+      // which would otherwise force the wrong context and fail OAuth state
+      // validation, breaking normal web sign-in.
+      if (ANON_FINISHES_FLOW.has(req.path)) {
+        const bindRaw = readCookie(cookieHeader, LOGIN_BIND_COOKIE_NAME);
+        if (bindRaw) {
+          const bindPayload = verifyBindToken(bindRaw);
+          const anonCookie = readCookie(cookieHeader, ANON_SESSION_COOKIE_NAME);
+          if (bindPayload && anonCookie && bindPayload.anonId === anonCookie) {
+            runWithRequestContext(
+              { userId: `anon:${anonCookie}`, origin },
+              () => next(),
+            );
+            return;
+          }
+          // Not a live Telegram flow — drop the stale cookie and fall through to
+          // normal session / anon handling below.
+          res.append("Set-Cookie", buildClearBindCookie());
+        }
+      }
+
+      // Any ordinary web OAuth start clears a stale Telegram bind cookie —
+      // including for an already-authenticated user — so an abandoned one-tap
+      // flow can't later divert THIS flow's callback into the bind branch, which
+      // forces anon context and would fail OAuth state validation. Runs before
+      // the session check so the authenticated start path is covered too.
+      if (
+        ANON_STARTS_FLOW.has(req.path) &&
+        readCookie(cookieHeader, LOGIN_BIND_COOKIE_NAME)
+      ) {
+        res.append("Set-Cookie", buildClearBindCookie());
+      }
+
       if (payload) {
         await hydrateUserSettings(payload.uid);
         // Seed the native starter pack so it runs on the scheduler even if the
@@ -87,14 +146,16 @@ export function sessionMiddleware(
         return;
       }
       if (ANON_STARTS_FLOW.has(req.path)) {
-        // Starting the OAuth dance. Reuse existing bunny_anon cookie if
-        // present, else mint a fresh one. The id is opaque — only used as
-        // the key into the in-memory anon OAuth state map.
+        // Starting the ordinary web OAuth dance. Reuse existing bunny_anon
+        // cookie if present, else mint a fresh one. The id is opaque — only
+        // used as the key into the in-memory anon OAuth state map.
         let anonId = readCookie(cookieHeader, ANON_SESSION_COOKIE_NAME);
         if (!anonId) {
           anonId = randomBytes(16).toString("hex");
           res.append("Set-Cookie", buildAnonCookie(anonId));
         }
+        // Stale Telegram bind cookies are cleared above (covers authed + anon
+        // starts), so no per-branch clear is needed here.
         runWithRequestContext({ userId: `anon:${anonId}`, origin }, () => next());
         return;
       }

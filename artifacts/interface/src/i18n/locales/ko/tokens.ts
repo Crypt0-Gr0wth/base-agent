@@ -1,6 +1,16 @@
 export default {
   contractSecurity: "컨트랙트 보안",
-  viaGoplus: "goplus 제공",
+  viaCoinstats: "coinstats 제공",
+  holderDistribution: "홀더 분포",
+  viaGmgn: "gmgn 제공",
+
+  pasteAddressPlaceholder: "base 토큰 컨트랙트 주소(0x…)를 붙여넣어 리서치하세요",
+  researchAddress: "리서치",
+  invalidAddress: "유효한 base 주소를 입력하세요(0x + 40자리 16진수).",
+  tokenNotFound: "base에서 해당 토큰을 찾을 수 없습니다.",
+  searchPlaceholder: "이름, 티커 또는 컨트랙트 주소로 검색",
+  searchAction: "검색",
+  noSearchResults: "base에서 검색과 일치하는 토큰이 없습니다.",
 
   rateLimitReached:
     "요청 제한에 도달했습니다 — 더 많은 리포트를 생성하기 전에 잠시 기다려 주세요.",
@@ -30,12 +40,13 @@ export default {
   notBaseTokenOrUnavailable:
     "base 토큰이 아니거나 데이터를 사용할 수 없습니다.",
 
-  methodologyMoralisTitle: "인기 토큰",
-  methodologyMoralisSource: "Moralis 인기 토큰 API (체인: base).",
-  methodologyMoralisFilters:
-    "최근 주목받는 토큰을 표시합니다. 목록은 약 1시간 캐시됩니다.",
-  methodologyMoralisMarket:
-    "가격, 시가총액, 유동성, 변동률은 Moralis에서 가져옵니다. 거래량은 모든 풀에 걸친 토큰의 24시간 온체인(dex) 총거래량이며 cex 거래는 제외합니다.",
+  methodologyCoingeckoTitle: "인기 토큰",
+  methodologyCoingeckoSource:
+    "CoinGecko 온체인 인기 풀 (네트워크: base), 각 풀의 기준 토큰으로 매핑.",
+  methodologyCoingeckoFilters:
+    "현재 가장 인기 있는 Base 풀을 표시합니다. 목록은 약 1시간 캐시됩니다.",
+  methodologyCoingeckoMarket:
+    "가격, 시가총액, 유동성, 변동률은 CoinGecko 온체인 인기 풀에서 가져옵니다. 거래량은 모든 풀에 걸친 토큰의 24시간 온체인(dex) 총거래량이며 cex 거래는 제외합니다.",
 
   methodologyVirtualsTitle: "그래듀에이트된 AI 에이전트 토큰",
   methodologyVirtualsSource:
@@ -62,8 +73,8 @@ export default {
     "bankr를 통한 최근 출시 — 토큰을 클릭하면 새 ai 리포트",
   subtitleVirtuals:
     "virtuals를 통한 ai 에이전트 토큰 — 토큰을 클릭하면 새 ai 리포트",
-  subtitleMoralis:
-    "moralis를 통한 인기 — 토큰을 클릭하면 새 ai 리포트",
+  subtitleCoingecko:
+    "coingecko 온체인을 통한 인기 — 토큰을 클릭하면 새 ai 리포트",
 
   refresh: "새로고침",
 
@@ -98,4 +109,8 @@ export default {
   colAge: "기간",
 
   buyCommand: "{address} 1 USDC어치 구매",
+
+  researchHint: "토큰을 클릭하면 차트를 미리 보고 에이전트 채팅에서 리서치합니다",
+  researchCommand: "이 토큰을 리서치해줘: {symbol} ({address})",
+  researchCommandNoSymbol: "이 토큰을 리서치해줘: {address}",
 } as const;

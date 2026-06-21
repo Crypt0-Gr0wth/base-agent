@@ -1,5 +1,17 @@
 import { logger } from "./logger";
-import { getCoingeckoApiKey } from "./settings";
+import { getCoingeckoApiKey, getBunnyDsEnabled } from "./settings";
+import {
+  gatewayAuthHeaders,
+  gatewayCloudUrl,
+  isGatewayConfigured,
+} from "./bunnyos-gateway";
+import { withApiCache } from "./api-cache";
+import { toToolText } from "./toon";
+
+// All CoinGecko tools are read-only GETs, so every dispatch is cacheable. A
+// 2-min TTL keeps repeat market lookups off bunnyDS without serving badly stale
+// prices.
+const COINGECKO_TTL_MS = 2 * 60 * 1000;
 
 // CoinGecko DEMO API. This single lib consolidates what used to be three
 // separate integrations: CoinMarketCap (CEX market data), DexScreener (onchain
@@ -337,10 +349,12 @@ export function findCoinGeckoTool(name: string): boolean {
 }
 
 export function coinGeckoStatus(): { connected: boolean; toolCount: number } {
-  // Every tool (CEX and onchain) requires the demo key — there is no keyless
-  // fallback. Report connected on key presence.
+  // Connected when bunnyDS is on (gateway routes CEX + onchain) OR the user
+  // brought their own demo key for BYO/open-source mode.
   return {
-    connected: Boolean(getCoingeckoApiKey()),
+    connected:
+      (getBunnyDsEnabled() && isGatewayConfigured()) ||
+      Boolean(getCoingeckoApiKey()),
     toolCount: TOOLS.length,
   };
 }
@@ -362,26 +376,37 @@ function buildUrl(
 }
 
 async function cexFetch(
-  apiKey: string,
+  apiKey: string | undefined,
   path: string,
   query: Record<string, string | string[]>,
   toolName: string,
 ): Promise<{ content: string; isError: boolean }> {
-  // Defensive: a key that slipped past save-time sanitization could carry a
-  // smart quote or NBSP. fetch headers must be ASCII or the call throws deep
-  // inside fetch. Trip on it explicitly instead.
-  if (/[^\x20-\x7E]/.test(apiKey)) {
-    return {
-      isError: true,
-      content:
-        "Your saved CoinGecko key contains a non-ASCII character (likely a smart quote from paste). Open Configure → llm → coingecko api key, delete it, and paste a fresh copy.",
-    };
+  let url: string;
+  let headers: Record<string, string>;
+  // bunnyDS on → route through the gateway (it injects the upstream CoinGecko
+  // Pro key); send only the Bearer tenant header. bunnyDS off → user demo key.
+  const useGateway = getBunnyDsEnabled() && isGatewayConfigured();
+  if (useGateway) {
+    url = gatewayCloudUrl(buildUrl(CEX_BASE, path, query));
+    headers = { accept: "application/json", ...gatewayAuthHeaders() };
+  } else if (apiKey) {
+    // Defensive: a key that slipped past save-time sanitization could carry a
+    // smart quote or NBSP. fetch headers must be ASCII or the call throws deep
+    // inside fetch. Trip on it explicitly instead.
+    if (/[^\x20-\x7E]/.test(apiKey)) {
+      return {
+        isError: true,
+        content:
+          "Your saved CoinGecko key contains a non-ASCII character (likely a smart quote from paste). Open Configure → api → coingecko api key, delete it, and paste a fresh copy.",
+      };
+    }
+    url = buildUrl(CEX_BASE, path, query);
+    headers = { accept: "application/json", [DEMO_HEADER]: apiKey };
+  } else {
+    return { isError: true, content: NOT_CONFIGURED_MSG };
   }
-  const url = buildUrl(CEX_BASE, path, query);
   try {
-    const resp = await fetch(url, {
-      headers: { accept: "application/json", [DEMO_HEADER]: apiKey },
-    });
+    const resp = await fetch(url, { headers });
     const text = await resp.text();
     if (!resp.ok) {
       logger.warn(
@@ -428,16 +453,16 @@ function projectCex(toolName: string, text: string): string {
   try {
     if (toolName === "coingecko_markets") {
       const arr = Array.isArray(parsed) ? parsed : [];
-      return JSON.stringify(arr.map(projectMarket));
+      return toToolText(arr.map(projectMarket));
     }
     if (toolName === "coingecko_coin_info") {
-      return JSON.stringify(projectCoinInfo(parsed));
+      return toToolText(projectCoinInfo(parsed));
     }
     if (toolName === "coingecko_search") {
-      return JSON.stringify(projectSearch(parsed));
+      return toToolText(projectSearch(parsed));
     }
     if (toolName === "coingecko_trending") {
-      return JSON.stringify(projectTrending(parsed));
+      return toToolText(projectTrending(parsed));
     }
   } catch (err) {
     logger.warn({ tool: toolName, err }, "CoinGecko projection failed");
@@ -576,12 +601,26 @@ function projectTrending(raw: unknown): Record<string, unknown> {
 // no usable key is configured so callers can surface a not-configured error.
 
 function onchainTarget(): { base: string; headers: Record<string, string> } | null {
+  // bunnyDS on → route onchain through the gateway. The cloud-wrapped base
+  // (`<gw>/cloud/<ONCHAIN_CG_BASE>`) means every onchain caller (tool fetch +
+  // enrichment helpers) that does `${base}<path>` produces a valid
+  // `<gw>/cloud/https://api.coingecko.com/api/v3/onchain<path>` transparently.
+  // The gateway injects the upstream key, so we send only the Bearer header.
+  if (getBunnyDsEnabled() && isGatewayConfigured()) {
+    return {
+      base: gatewayCloudUrl(ONCHAIN_CG_BASE),
+      headers: { accept: "application/json", ...gatewayAuthHeaders() },
+    };
+  }
+  // bunnyDS off → use the user's own demo key against CoinGecko directly.
   const apiKey = getCoingeckoApiKey();
-  if (!apiKey || /[^\x20-\x7E]/.test(apiKey)) return null;
-  return {
-    base: ONCHAIN_CG_BASE,
-    headers: { accept: "application/json", [DEMO_HEADER]: apiKey },
-  };
+  if (apiKey && !/[^\x20-\x7E]/.test(apiKey)) {
+    return {
+      base: ONCHAIN_CG_BASE,
+      headers: { accept: "application/json", [DEMO_HEADER]: apiKey },
+    };
+  }
+  return null;
 }
 
 const MAX_POOLS = 20;
@@ -611,10 +650,10 @@ async function onchainFetch(
       };
     }
     if (toolName === "coingecko_onchain_token_data") {
-      return { isError: false, content: JSON.stringify(projectOnchainTokens(text)) };
+      return { isError: false, content: toToolText(projectOnchainTokens(text)) };
     }
     if (toolName === "coingecko_onchain_search_pools") {
-      return { isError: false, content: JSON.stringify(projectOnchainPools(text)) };
+      return { isError: false, content: toToolText(projectOnchainPools(text)) };
     }
     return { isError: false, content: text };
   } catch (err) {
@@ -710,14 +749,25 @@ export async function callCoinGeckoTool(
       content: `Failed to build CoinGecko request: ${message}`,
     };
   }
-  if (tool.kind === "onchain") {
-    return onchainFetch(path, query, name);
+  // Mode must mirror the actual transport so gateway/direct never share an entry.
+  // cexFetch/onchainTarget route through the gateway whenever bunnyDS is on (it
+  // takes priority over a user key), else fall back to the user's demo key.
+  // query is built deterministically by the tool, so JSON.stringify is stable.
+  let useGateway = false;
+  try {
+    useGateway = getBunnyDsEnabled() && isGatewayConfigured();
+  } catch {
+    useGateway = isGatewayConfigured();
   }
-  const apiKey = getCoingeckoApiKey();
-  if (!apiKey) {
-    return { isError: true, content: NOT_CONFIGURED_MSG };
-  }
-  return cexFetch(apiKey, path, query, name);
+  const mode = useGateway ? "gateway" : "direct";
+  const cacheKey = `coingecko:${mode}:${tool.kind}:${path}?${JSON.stringify(query)}`;
+  return withApiCache(cacheKey, COINGECKO_TTL_MS, () =>
+    tool.kind === "onchain"
+      ? onchainFetch(path, query, name)
+      : // cexFetch handles routing: user key → direct, else bunnyOS gateway,
+        // else a not-configured error.
+        cexFetch(getCoingeckoApiKey(), path, query, name),
+  );
 }
 
 // --- Enrichment helper ----------------------------------------------------
@@ -800,6 +850,180 @@ export async function getCoinGeckoPoolData(
     }
   }
   return { data, queried };
+}
+
+// USD price of a single Base token via the CoinGecko onchain proxy token
+// endpoint (`/networks/{network}/tokens/{address}` → attributes.price_usd).
+// Token-level (not pool-side) so it's independent of which side of a pool the
+// token sits on. Returns null when onchain access isn't configured or the token
+// has no price. Cached on the shared onchain TTL, mode-keyed like every other
+// onchain read so gateway/direct results never cross-contaminate.
+export async function getCoinGeckoTokenPriceUsd(
+  tokenAddress: string,
+  network: string = DEFAULT_NETWORK,
+): Promise<number | null> {
+  const addr = tokenAddress.trim().toLowerCase();
+  if (!addr) return null;
+  const target = onchainTarget();
+  if (!target) return null;
+  const { base, headers } = target;
+  const mode = base.startsWith(ONCHAIN_CG_BASE) ? "direct" : "gateway";
+  const res = await withApiCache(
+    `coingecko:tokenprice:${mode}:${network}:${addr}`,
+    COINGECKO_TTL_MS,
+    async () => {
+      try {
+        const url = `${base}/networks/${network}/tokens/${addr}`;
+        const resp = await fetch(url, { headers });
+        if (!resp.ok) return { content: "", isError: true };
+        return { content: await resp.text(), isError: false };
+      } catch {
+        return { content: "", isError: true };
+      }
+    },
+  );
+  if (res.isError || !res.content) return null;
+  try {
+    const parsed = JSON.parse(res.content) as Record<string, unknown>;
+    const data = parsed["data"];
+    const attrsRaw =
+      data && typeof data === "object"
+        ? (data as Record<string, unknown>)["attributes"]
+        : null;
+    const attrs =
+      attrsRaw && typeof attrsRaw === "object"
+        ? (attrsRaw as Record<string, unknown>)
+        : null;
+    return attrs ? num(attrs["price_usd"]) : null;
+  } catch {
+    return null;
+  }
+}
+
+// --- Trending pools (onchain discovery) -----------------------------------
+// Base's trending onchain pools from the CoinGecko /onchain proxy
+// (`/networks/base/trending_pools`). Each entry is a POOL, so we read the
+// pool's base_token (via `include=base_token`, parsed from the `included`
+// array) to get token identity/address, dedupe by token (a token can have
+// several trending pools, keep the highest-ranked one), and project the pool's
+// market columns. Requires the demo key (or bunnyDS gateway), same as every
+// other onchain caller. Returns [] when no usable key is configured.
+
+export interface CoinGeckoTrendingToken {
+  tokenAddress: string;
+  symbol: string;
+  name: string;
+  logo: string | null;
+  usdPrice: number | null;
+  marketCap: number | null;
+  liquidityUsd: number | null;
+  createdAt: number | null; // unix seconds (pool creation, best-available proxy)
+  pricePercentChange1h: number | null;
+  pricePercentChange24h: number | null;
+  totalVolume24h: number | null;
+}
+
+const TRENDING_MAX_PAGES = 5;
+
+export async function getCoinGeckoTrendingTokens(
+  limit: number,
+  network: string = DEFAULT_NETWORK,
+): Promise<CoinGeckoTrendingToken[]> {
+  const target = onchainTarget();
+  if (!target) return [];
+  const { base, headers } = target;
+  const out: CoinGeckoTrendingToken[] = [];
+  const seen = new Set<string>();
+
+  for (let page = 1; page <= TRENDING_MAX_PAGES && out.length < limit; page++) {
+    let parsed: unknown;
+    try {
+      const url = `${base}/networks/${network}/trending_pools?include=base_token&page=${page}`;
+      const resp = await fetch(url, { headers });
+      if (!resp.ok) {
+        logger.warn({ status: resp.status, page }, "CoinGecko trending_pools error");
+        break;
+      }
+      parsed = JSON.parse(await resp.text());
+    } catch (err) {
+      logger.warn({ err, page }, "CoinGecko trending_pools fetch failed");
+      break;
+    }
+    const root =
+      parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+    const list = root["data"];
+    if (!Array.isArray(list) || list.length === 0) break;
+
+    // Map "<type>:<id>" → token attributes from the included sideload so each
+    // pool's base_token identity (address, name, symbol, image) is resolvable.
+    const tokenById = new Map<string, Record<string, unknown>>();
+    const included = root["included"];
+    if (Array.isArray(included)) {
+      for (const inc of included) {
+        const o = inc as Record<string, unknown>;
+        if (str(o["type"]) !== "token") continue;
+        const id = str(o["id"]);
+        const attrs = o["attributes"];
+        if (id && attrs && typeof attrs === "object") {
+          tokenById.set(id, attrs as Record<string, unknown>);
+        }
+      }
+    }
+
+    for (const item of list) {
+      if (out.length >= limit) break;
+      const poolObj = item as Record<string, unknown>;
+      const attrs = poolObj["attributes"];
+      if (!attrs || typeof attrs !== "object") continue;
+      const a = attrs as Record<string, unknown>;
+
+      let baseTokenId = "";
+      const rel = poolObj["relationships"];
+      if (rel && typeof rel === "object") {
+        const bt = (rel as Record<string, unknown>)["base_token"];
+        const data =
+          bt && typeof bt === "object" ? (bt as Record<string, unknown>)["data"] : null;
+        if (data && typeof data === "object") {
+          baseTokenId = str((data as Record<string, unknown>)["id"]);
+        }
+      }
+      const tokenAttrs = tokenById.get(baseTokenId);
+
+      // Token contract address: prefer the included token's address, else parse
+      // it out of the "<network>_<address>" relationship id.
+      let tokenAddress = tokenAttrs ? str(tokenAttrs["address"]) : "";
+      if (!tokenAddress && baseTokenId.includes("_")) {
+        tokenAddress = baseTokenId.slice(baseTokenId.indexOf("_") + 1);
+      }
+      if (!tokenAddress) continue;
+      const lower = tokenAddress.toLowerCase();
+      if (seen.has(lower)) continue;
+      seen.add(lower);
+
+      const imageUrl = tokenAttrs ? str(tokenAttrs["image_url"]) : "";
+      let createdAt: number | null = null;
+      const created = a["pool_created_at"];
+      if (typeof created === "string") {
+        const ms = Date.parse(created);
+        if (Number.isFinite(ms)) createdAt = Math.round(ms / 1000);
+      }
+
+      out.push({
+        tokenAddress,
+        symbol: tokenAttrs ? str(tokenAttrs["symbol"]) : "",
+        name: tokenAttrs ? str(tokenAttrs["name"]) : str(a["name"]),
+        logo: imageUrl && imageUrl !== "missing.png" ? imageUrl : null,
+        usdPrice: num(a["base_token_price_usd"]),
+        marketCap: num(a["market_cap_usd"]) ?? num(a["fdv_usd"]),
+        liquidityUsd: liqNum(a["reserve_in_usd"]),
+        createdAt,
+        pricePercentChange1h: win(a["price_change_percentage"], "h1"),
+        pricePercentChange24h: win(a["price_change_percentage"], "h24"),
+        totalVolume24h: win(a["volume_usd"], "h24"),
+      });
+    }
+  }
+  return out.slice(0, limit);
 }
 
 // Per-token onchain data from the CoinGecko tokens/multi endpoint.
@@ -887,6 +1111,148 @@ export async function getCoinGeckoTokenOnchain(
     }
   }
   return out;
+}
+
+// A token candidate returned by the onchain pool search. Mirrors the explorer
+// row shape closely so the route can map it to the frontend TrendingToken with
+// no extra lookups. createdAt is intentionally omitted — search/pools only
+// exposes the *pool* creation time, not the token's, which would be misleading.
+export interface CoinGeckoTokenSearchResult {
+  address: string;
+  symbol: string;
+  name: string;
+  logo: string | null;
+  usdPrice: number | null;
+  marketCap: number | null;
+  liquidityUsd: number | null;
+  totalVolume24h: number | null;
+  pricePercentChange1h: number | null;
+  pricePercentChange24h: number | null;
+}
+
+// Search Base tokens by name, ticker, or contract address via the CoinGecko
+// onchain (GeckoTerminal proxy) /search/pools endpoint. Each match is a DEX
+// pool; we resolve the base token from the `included` relationship payload,
+// dedupe by token address keeping the deepest-liquidity pool, and return ranked
+// candidates. Requires the per-user demo key; returns [] when unconfigured or
+// on any failure so the caller degrades to "no results".
+export async function searchCoinGeckoOnchainTokens(
+  query: string,
+  network: string = DEFAULT_NETWORK,
+  limit = 15,
+): Promise<CoinGeckoTokenSearchResult[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const target = onchainTarget();
+  if (!target) return [];
+  const { base, headers } = target;
+
+  let parsed: unknown;
+  try {
+    const url = buildUrl(base, "/search/pools", {
+      query: q,
+      network,
+      include: "base_token",
+    });
+    const resp = await fetch(url, { headers });
+    if (!resp.ok) {
+      logger.warn({ status: resp.status }, "CoinGecko search/pools error");
+      return [];
+    }
+    parsed = JSON.parse(await resp.text());
+  } catch (err) {
+    logger.warn({ err }, "CoinGecko search/pools fetch failed");
+    return [];
+  }
+
+  const root =
+    parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
+
+  // Index the `included` token entries (type "token") by their JSON:API id
+  // ("<network>_<address>") so each pool can resolve its base token's
+  // address/name/symbol/logo.
+  const included = Array.isArray(root["included"]) ? root["included"] : [];
+  const tokenById = new Map<string, Record<string, unknown>>();
+  for (const item of included) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    if (o["type"] !== "token") continue;
+    const id = typeof o["id"] === "string" ? o["id"] : "";
+    const attrs =
+      o["attributes"] && typeof o["attributes"] === "object"
+        ? (o["attributes"] as Record<string, unknown>)
+        : null;
+    if (id && attrs) tokenById.set(id, attrs);
+  }
+
+  const pools = Array.isArray(root["data"]) ? root["data"] : [];
+  // tokenAddrLower -> best (deepest-liquidity) candidate so far.
+  const byToken = new Map<string, CoinGeckoTokenSearchResult>();
+
+  for (const item of pools) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    const a =
+      o["attributes"] && typeof o["attributes"] === "object"
+        ? (o["attributes"] as Record<string, unknown>)
+        : null;
+    if (!a) continue;
+    const rel =
+      o["relationships"] && typeof o["relationships"] === "object"
+        ? (o["relationships"] as Record<string, unknown>)
+        : null;
+    const baseTokRel =
+      rel && rel["base_token"] && typeof rel["base_token"] === "object"
+        ? (rel["base_token"] as Record<string, unknown>)
+        : null;
+    const baseData =
+      baseTokRel && baseTokRel["data"] && typeof baseTokRel["data"] === "object"
+        ? (baseTokRel["data"] as Record<string, unknown>)
+        : null;
+    const tokId = baseData && typeof baseData["id"] === "string" ? baseData["id"] : "";
+    if (!tokId) continue;
+
+    const tokAttrs = tokenById.get(tokId);
+    // Token address: prefer the included token's own address field, else derive
+    // it from the JSON:API id ("<network>_<address>").
+    const addr = (
+      str(tokAttrs?.["address"]) ||
+      (tokId.includes("_") ? tokId.slice(tokId.indexOf("_") + 1) : tokId)
+    ).toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(addr)) continue;
+
+    const logoRaw = str(tokAttrs?.["image_url"]);
+    const logo = logoRaw && !logoRaw.includes("missing.png") ? logoRaw : null;
+    // Fall back to the pool name's left side (e.g. "PEPE / WETH") for the
+    // symbol when the included token lacks one.
+    const poolName = str(a["name"]);
+    const symbol =
+      str(tokAttrs?.["symbol"]) ||
+      (poolName.includes("/") ? poolName.split("/")[0].trim() : "");
+
+    const liquidityUsd = liqNum(a["reserve_in_usd"]);
+    const candidate: CoinGeckoTokenSearchResult = {
+      address: addr,
+      symbol,
+      name: str(tokAttrs?.["name"]) || symbol,
+      logo,
+      usdPrice: num(a["base_token_price_usd"]),
+      marketCap: num(a["market_cap_usd"]) ?? num(a["fdv_usd"]),
+      liquidityUsd,
+      totalVolume24h: win(a["volume_usd"], "h24"),
+      pricePercentChange1h: win(a["price_change_percentage"], "h1"),
+      pricePercentChange24h: win(a["price_change_percentage"], "h24"),
+    };
+
+    const prev = byToken.get(addr);
+    if (!prev || (candidate.liquidityUsd ?? 0) > (prev.liquidityUsd ?? 0)) {
+      byToken.set(addr, candidate);
+    }
+  }
+
+  return Array.from(byToken.values())
+    .sort((x, y) => (y.liquidityUsd ?? 0) - (x.liquidityUsd ?? 0))
+    .slice(0, limit);
 }
 
 // --- OHLCV chart data -----------------------------------------------------

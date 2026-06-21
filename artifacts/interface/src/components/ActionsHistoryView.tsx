@@ -1,9 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
+import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { playSound } from "@/lib/sound";
 import { TokensMentioned } from "./ActionsPanel";
+import { ActionMarkdown } from "./ActionMarkdown";
 import { useT, type TFn } from "@/i18n";
 
 type Kind = "alert" | "recommendation";
@@ -129,16 +131,10 @@ export function ActionsHistoryView() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background">
-      <div className="px-4 sm:px-6 py-4 border-b border-border/50 shrink-0">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-          <div>
-            <h2 className="font-sans text-lg text-foreground">
-              {t("actionsHistory.actionsHistoryTitle")}
-            </h2>
-            <p className="font-mono text-[11px] text-muted-foreground mt-0.5">
-              {t("actionsHistory.subtitle")}
-            </p>
-          </div>
+      <PageHeader
+        title={t("actionsHistory.actionsHistoryTitle")}
+        subtitle={t("actionsHistory.subtitle")}
+        actions={
           <div className="font-mono text-[10px] text-muted-foreground">
             {t("actionsHistory.countsSummary", {
               pending: counts.pending,
@@ -146,7 +142,8 @@ export function ActionsHistoryView() {
               dismissed: counts.dismissed,
             })}
           </div>
-        </div>
+        }
+      >
         <div className="mt-3 flex items-center gap-x-4 gap-y-2 flex-wrap">
           <FilterPills
             label={t("actionsHistory.kindLabel")}
@@ -173,7 +170,7 @@ export function ActionsHistoryView() {
             ]}
           />
         </div>
-      </div>
+      </PageHeader>
 
       <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
         {isLoading && (
@@ -215,10 +212,10 @@ export function ActionsHistoryView() {
                       ●
                     </span>
                     <div className="flex-1 min-w-0">
-                      <div className="font-mono text-xs text-foreground font-medium leading-snug">
+                      <div className="font-mono text-xs text-foreground font-medium leading-snug break-words">
                         {a.title}
                       </div>
-                      <div className="font-mono text-[10px] text-muted-foreground/80 mt-0.5 flex items-center gap-2 flex-wrap">
+                      <div className="font-mono text-[10px] text-muted-foreground/80 mt-0.5 flex items-center gap-2 flex-wrap min-w-0">
                         <span>{kindLabel[a.kind]}</span>
                         <span>·</span>
                         <span className={STATUS_COLOR[a.status]}>
@@ -229,7 +226,7 @@ export function ActionsHistoryView() {
                           {relativeTime(a.createdAt, t)}
                         </span>
                         <span>·</span>
-                        <span className="truncate" title={a.source}>
+                        <span className="min-w-0 break-all" title={a.source}>
                           {a.source}
                         </span>
                       </div>
@@ -246,9 +243,10 @@ export function ActionsHistoryView() {
                       </Button>
                     )}
                   </div>
-                  <div className="font-mono text-[11px] text-foreground/80 leading-relaxed pl-5 break-words">
-                    {a.description}
-                  </div>
+                  <ActionMarkdown
+                    source={a.description}
+                    className="font-mono text-[11px] text-foreground/80 leading-relaxed pl-5 break-words"
+                  />
                   {a.tokens && a.tokens.length > 0 && (
                     <div className="pl-5">
                       <TokensMentioned tokens={a.tokens} />

@@ -1,12 +1,18 @@
 export default {
   main: "main",
   actionsBuilder: "actions builder",
+  builder: "builder",
   actionsHistory: "actions history",
   research: "research",
   perps: "perps",
+  bunny: "bunnyEX",
+  bunnyds: "bunnyDS",
   baseMcp: "base mcp",
   wallet: "wallet",
   actionsInbox: "actions inbox",
+  actionInbox: "actions",
+  inbox: "inbox",
+  history: "history",
   chat: "chat",
   close: "close {title}",
 } as const;

@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="en" class="light">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
 
     <!-- Primary SEO -->
-    <title>bunnyOS — the first open-source @base agent</title>
-    <meta name="description" content="An open-source AI agent built on the Base stack to help you grow your assets." />
+    <title>The human-agent terminal on @base.</title>
+    <meta name="description" content="built open source and in public for the agentic future" />
     <meta name="keywords" content="bunnyOS, Base agent, AI agent crypto, open source crypto agent, Base MCP, DeFi agent, onchain AI, Coinbase Base, autonomous agent, self-hosted crypto agent" />
     <meta name="author" content="bunnyOS" />
     <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
@@ -32,8 +32,8 @@
     <!-- Open Graph (Facebook, LinkedIn, Telegram, Discord, Slack, iMessage) -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="bunnyOS" />
-    <meta property="og:title" content="bunnyOS — the first open-source @base agent" />
-    <meta property="og:description" content="An open-source AI agent built on the Base stack to help you grow your assets." />
+    <meta property="og:title" content="The human-agent terminal on @base." />
+    <meta property="og:description" content="built open source and in public for the agentic future" />
     <meta property="og:url" content="https://bunnyos.ai/" />
     <meta property="og:locale" content="en_US" />
     <meta property="og:image" content="https://bunnyos.ai/opengraph.jpg" />
@@ -41,16 +41,16 @@
     <meta property="og:image:type" content="image/jpeg" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="720" />
-    <meta property="og:image:alt" content="bunnyOS — the first open-source @base agent" />
+    <meta property="og:image:alt" content="The human-agent terminal on @base." />
 
     <!-- Twitter / X cards -->
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@bunnyOS_" />
     <meta name="twitter:creator" content="@bunnyOS_" />
-    <meta name="twitter:title" content="bunnyOS — the first open-source @base agent" />
-    <meta name="twitter:description" content="An open-source AI agent built on the Base stack to help you grow your assets." />
+    <meta name="twitter:title" content="The human-agent terminal on @base." />
+    <meta name="twitter:description" content="built open source and in public for the agentic future" />
     <meta name="twitter:image" content="https://bunnyos.ai/opengraph.jpg" />
-    <meta name="twitter:image:alt" content="bunnyOS — the first open-source @base agent" />
+    <meta name="twitter:image:alt" content="The human-agent terminal on @base." />
 
     <!-- Telegram (uses OG; explicit channel hint) -->
     <meta name="telegram:channel" content="@bunnyOS" />
@@ -65,7 +65,7 @@
           "name": "bunnyOS",
           "applicationCategory": "FinanceApplication",
           "operatingSystem": "Web, Linux, macOS, Windows (self-hosted)",
-          "description": "An open-source AI agent built on the Base stack to help you grow your assets.",
+          "description": "built open source and in public for the agentic future",
           "url": "https://bunnyos.ai/",
           "image": "https://bunnyos.ai/opengraph.jpg",
           "license": "https://www.gnu.org/licenses/agpl-3.0.html",
@@ -99,6 +99,29 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
   </head>
   <body>
+    <!-- Apply the saved (or OS-preferred) theme before React mounts so there is
+         no light/dark flash on first paint. Mirrors the ThemeProvider logic. -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("bunny.theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia &&
+                  window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light";
+          var root = document.documentElement;
+          root.classList.remove("light", "dark");
+          root.classList.add(theme);
+          root.style.colorScheme = theme;
+        } catch (e) {
+          document.documentElement.classList.add("light");
+          document.documentElement.style.colorScheme = "light";
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
