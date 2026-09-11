@@ -1,3 +1,7 @@
+## Parcours français
+
+Une lecture technique en huit chapitres analyse la sécurité des agents Base, la provenance des données et la frontière d’approbation des transactions : [ouvrir le parcours](docs/fr/README.md).
+
 <div align="center">
 
 <h1 align="center">
